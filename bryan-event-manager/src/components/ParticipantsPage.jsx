@@ -4,8 +4,12 @@ import Papa from 'papaparse';
 export default function ParticipantsPage({ participants, loading, onCheckin, onUpload, onReset, hasData }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [busy, setBusy] = useState(null); // email currently being processed
+  const [busy, setBusy] = useState(null);
   const [uploadError, setUploadError] = useState(null);
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualForm, setManualForm] = useState({ first_name: '', last_name: '', email: '' });
+  const [manualError, setManualError] = useState(null);
+  const [manualSaving, setManualSaving] = useState(false);
   const fileRef = useRef(null);
 
   const filtered = useMemo(() => {
@@ -26,7 +30,6 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
     setUploadError(null);
     const file = e.target.files?.[0];
     if (!file) return;
-
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -50,6 +53,30 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
     });
   };
 
+  const handleManualAdd = async (e) => {
+    e.preventDefault();
+    setManualError(null);
+    const { first_name, last_name, email } = manualForm;
+    if (!first_name.trim() && !last_name.trim()) {
+      setManualError('Inserisci almeno nome o cognome');
+      return;
+    }
+    if (!email.trim() || !email.includes('@')) {
+      setManualError('Inserisci un indirizzo email valido');
+      return;
+    }
+    setManualSaving(true);
+    try {
+      await onUpload([{ first_name: first_name.trim(), last_name: last_name.trim(), email: email.trim() }]);
+      setManualForm({ first_name: '', last_name: '', email: '' });
+      setShowManualForm(false);
+    } catch (err) {
+      setManualError('Errore nel salvataggio');
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
   const handleAction = async (email, action) => {
     setBusy(email);
     try {
@@ -67,11 +94,17 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
             <h2 className="text-base font-semibold text-gray-900">Carica partecipanti</h2>
             <p className="text-sm text-gray-500">CSV con colonne: <code className="text-xs bg-gray-100 px-1 rounded">nome</code>, <code className="text-xs bg-gray-100 px-1 rounded">cognome</code>, <code className="text-xs bg-gray-100 px-1 rounded">email</code></p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <label className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover cursor-pointer">
               Scegli CSV
               <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
             </label>
+            <button
+              onClick={() => { setShowManualForm((v) => !v); setManualError(null); }}
+              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
+            >
+              {showManualForm ? 'Chiudi' : '+ Aggiungi manualmente'}
+            </button>
             {hasData && (
               <button
                 onClick={onReset}
@@ -82,8 +115,56 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
             )}
           </div>
         </div>
+
+        {showManualForm && (
+          <form onSubmit={handleManualAdd} className="border-t pt-4 mt-4 px-4 sm:px-6 pb-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Nome</label>
+                <input
+                  type="text"
+                  value={manualForm.first_name}
+                  onChange={(e) => setManualForm((f) => ({ ...f, first_name: e.target.value }))}
+                  placeholder="Mario"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Cognome</label>
+                <input
+                  type="text"
+                  value={manualForm.last_name}
+                  onChange={(e) => setManualForm((f) => ({ ...f, last_name: e.target.value }))}
+                  placeholder="Rossi"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={manualForm.email}
+                  onChange={(e) => setManualForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="mario.rossi@esempio.it"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={manualSaving}
+                className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover disabled:opacity-50"
+              >
+                {manualSaving ? 'Salvataggio...' : 'Aggiungi partecipante'}
+              </button>
+              {manualError && <span className="text-sm text-red-600">{manualError}</span>}
+            </div>
+          </form>
+        )}
+
         {uploadError && (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{uploadError}</div>
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 mx-4 sm:mx-6 mb-4">{uploadError}</div>
         )}
       </div>
 
