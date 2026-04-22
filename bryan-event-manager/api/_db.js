@@ -35,12 +35,17 @@ export async function ensureSchema() {
       first_name TEXT NOT NULL,
       last_name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
+      company TEXT NOT NULL DEFAULT '',
+      role TEXT NOT NULL DEFAULT '',
       checked_in BOOLEAN NOT NULL DEFAULT FALSE,
       checked_in_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
   await query(`CREATE INDEX IF NOT EXISTS idx_participants_email ON participants (LOWER(email));`);
+  // Add columns if they don't exist (for existing databases)
+  await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS company TEXT NOT NULL DEFAULT '';`);
+  await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT '';`);
 }
 
 export function setCors(res) {

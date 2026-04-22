@@ -1,6 +1,6 @@
 const ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: HomeIcon },
-  { id: 'participants', label: 'Partecipanti', icon: UsersIcon },
+  { id: 'participants', label: 'Participants', icon: UsersIcon },
   { id: 'scanner', label: 'Scanner', icon: QrIcon },
   { id: 'export', label: 'Export', icon: FileIcon },
 ];

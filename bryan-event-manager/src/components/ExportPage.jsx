@@ -2,15 +2,15 @@ export default function ExportPage({ stats, onExport, disabled }) {
   return (
     <div className="max-w-2xl">
       <div className="bg-white rounded-xl border p-6 sm:p-8">
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">Export CSV partecipanti</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Export Participants CSV</h2>
         <p className="text-sm text-gray-600 mb-6">
-          Scarica un file CSV con tutti i partecipanti, stato (Check-in / No-show) e data/ora del check-in.
-          Utile per report post-evento.
+          Download a CSV file with all participants, their status (Checked in / No-show),
+          company, role, and check-in timestamp. Useful for post-event reporting.
         </p>
 
         <div className="grid grid-cols-3 gap-3 mb-6">
-          <MiniStat label="Totale" value={stats.total} />
-          <MiniStat label="Check-in" value={stats.checked} valueClass="text-ok" />
+          <MiniStat label="Total" value={stats.total} />
+          <MiniStat label="Checked in" value={stats.checked} valueClass="text-ok" />
           <MiniStat label="No-show" value={stats.missing} valueClass="text-danger" />
         </div>
 
@@ -19,17 +19,19 @@ export default function ExportPage({ stats, onExport, disabled }) {
           disabled={disabled}
           className="w-full sm:w-auto px-5 py-3 bg-brand text-white font-medium rounded-lg hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Scarica CSV
+          Download CSV
         </button>
 
         <div className="mt-6 text-xs text-gray-500">
-          <p className="font-medium mb-1">Colonne incluse:</p>
+          <p className="font-medium mb-1">Columns included:</p>
           <ul className="list-disc pl-5 space-y-0.5">
-            <li>Nome</li>
-            <li>Cognome</li>
+            <li>First Name</li>
+            <li>Last Name</li>
             <li>Email</li>
-            <li>Stato (Check-in / No-show)</li>
-            <li>Data Check-in</li>
+            <li>Company</li>
+            <li>Role</li>
+            <li>Status (Checked in / No-show)</li>
+            <li>Check-in Time</li>
           </ul>
         </div>
       </div>

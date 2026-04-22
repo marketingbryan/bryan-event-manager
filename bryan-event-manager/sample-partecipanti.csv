@@ -1,5 +1,5 @@
-nome,cognome,email
-Davide,Berardino,davide.berardino@bryan.it
-Mario,Rossi,mario.rossi@esempio.it
-Giulia,Bianchi,giulia.bianchi@esempio.it
-Luca,Verdi,luca.verdi@esempio.it
+first_name,last_name,email,company,role
+Davide,Berardino,davide.berardino@bryan.it,Bryan,CEO
+Mario,Rossi,mario.rossi@esempio.it,Acme Inc.,Marketing Manager
+Giulia,Bianchi,giulia.bianchi@esempio.it,TechCorp,Developer
+Luca,Verdi,luca.verdi@esempio.it,StartupXYZ,Product Designer

@@ -1,23 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 
-// Extract email from decoded QR text.
-// Expected format: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=<email>
-// Also supports plain emails or "mailto:<email>" URLs.
 function extractEmail(text) {
   if (!text) return null;
   const trimmed = String(text).trim();
-  // Try URL with `data` parameter
   try {
     const url = new URL(trimmed);
     const dataParam = url.searchParams.get('data');
     if (dataParam && dataParam.includes('@')) return decodeURIComponent(dataParam).trim().toLowerCase();
   } catch (_) {}
-  // mailto:
   if (trimmed.toLowerCase().startsWith('mailto:')) {
     return trimmed.slice(7).split('?')[0].trim().toLowerCase();
   }
-  // Plain email
   const emailMatch = trimmed.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
   if (emailMatch) return emailMatch[1].toLowerCase();
   return null;
@@ -33,9 +27,7 @@ export default function ScannerPanel({ onEmail }) {
   const [manualEmail, setManualEmail] = useState('');
 
   useEffect(() => {
-    return () => {
-      stopScanner();
-    };
+    return () => { stopScanner(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -52,7 +44,7 @@ export default function ScannerPanel({ onEmail }) {
       );
       setScanning(true);
     } catch (e) {
-      setError(`Impossibile avviare la fotocamera: ${e.message || e}. Verifica i permessi del browser.`);
+      setError(`Unable to start camera: ${e.message || e}. Please check browser permissions.`);
       html5Ref.current = null;
     }
   };
@@ -75,7 +67,7 @@ export default function ScannerPanel({ onEmail }) {
 
     const email = extractEmail(text);
     if (!email) {
-      addHistory({ email: null, raw: text, status: 'error', message: 'QR non valido' });
+      addHistory({ email: null, raw: text, status: 'error', message: 'Invalid QR code' });
       return;
     }
 
@@ -88,7 +80,7 @@ export default function ScannerPanel({ onEmail }) {
         name: `${res.participant.first_name} ${res.participant.last_name}`,
       });
     } else {
-      addHistory({ email, raw: text, status: 'error', message: res?.error || 'Non trovato' });
+      addHistory({ email, raw: text, status: 'error', message: res?.error || 'Not found' });
     }
   };
 
@@ -100,7 +92,7 @@ export default function ScannerPanel({ onEmail }) {
     e.preventDefault();
     const email = manualEmail.trim().toLowerCase();
     if (!email || !email.includes('@')) {
-      setError('Inserisci un indirizzo email valido');
+      setError('Please enter a valid email address');
       return;
     }
     setError(null);
@@ -114,16 +106,16 @@ export default function ScannerPanel({ onEmail }) {
       });
       setManualEmail('');
     } else {
-      addHistory({ email, raw: email, status: 'error', message: res?.error || 'Non trovato' });
+      addHistory({ email, raw: email, status: 'error', message: res?.error || 'Not found' });
     }
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="bg-white rounded-xl border p-4 sm:p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-3">Scanner QR</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-3">QR Scanner</h2>
         <p className="text-sm text-gray-500 mb-4">
-          Inquadra il QR code del partecipante per fare il check-in automatico.
+          Point the camera at the participant's QR code for automatic check-in.
         </p>
 
         <div
@@ -139,14 +131,14 @@ export default function ScannerPanel({ onEmail }) {
               onClick={startScanner}
               className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover"
             >
-              Avvia scanner
+              Start Scanner
             </button>
           ) : (
             <button
               onClick={stopScanner}
               className="px-4 py-2 bg-white border text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-100"
             >
-              Ferma scanner
+              Stop Scanner
             </button>
           )}
         </div>
@@ -156,29 +148,29 @@ export default function ScannerPanel({ onEmail }) {
         )}
 
         <form onSubmit={handleManualSubmit} className="mt-5 pt-5 border-t">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Check-in manuale via email</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Manual check-in by email</label>
           <div className="flex gap-2">
             <input
               type="email"
               value={manualEmail}
               onChange={(e) => setManualEmail(e.target.value)}
-              placeholder="email@esempio.it"
+              placeholder="email@example.com"
               className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand"
             />
             <button
               type="submit"
               className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800"
             >
-              Check-in
+              Check in
             </button>
           </div>
         </form>
       </div>
 
       <div className="bg-white rounded-xl border p-4 sm:p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-3">Ultime scansioni</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-3">Recent Scans</h2>
         {history.length === 0 ? (
-          <p className="text-sm text-gray-400">Nessuna scansione ancora.</p>
+          <p className="text-sm text-gray-400">No scans yet.</p>
         ) : (
           <ul className="space-y-2">
             {history.map((h, i) => (
@@ -195,16 +187,16 @@ export default function ScannerPanel({ onEmail }) {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="font-medium text-gray-900">
-                      {h.name || h.email || 'QR non valido'}
+                      {h.name || h.email || 'Invalid QR'}
                     </div>
                     <div className="text-xs text-gray-600 mt-0.5">
-                      {h.status === 'ok' && 'Check-in completato'}
-                      {h.status === 'already' && 'Gi\u00e0 fatto check-in'}
-                      {h.status === 'error' && (h.message || 'Errore')}
+                      {h.status === 'ok' && 'Check-in completed'}
+                      {h.status === 'already' && 'Already checked in'}
+                      {h.status === 'error' && (h.message || 'Error')}
                     </div>
                   </div>
                   <div className="text-xs text-gray-400 whitespace-nowrap">
-                    {h.at.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    {h.at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>
                 </div>
               </li>

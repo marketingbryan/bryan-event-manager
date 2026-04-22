@@ -7,7 +7,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
   const [busy, setBusy] = useState(null);
   const [uploadError, setUploadError] = useState(null);
   const [showManualForm, setShowManualForm] = useState(false);
-  const [manualForm, setManualForm] = useState({ first_name: '', last_name: '', email: '' });
+  const [manualForm, setManualForm] = useState({ first_name: '', last_name: '', email: '', company: '', role: '' });
   const [manualError, setManualError] = useState(null);
   const [manualSaving, setManualSaving] = useState(false);
   const fileRef = useRef(null);
@@ -21,7 +21,9 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
       return (
         (p.first_name || '').toLowerCase().includes(q) ||
         (p.last_name || '').toLowerCase().includes(q) ||
-        (p.email || '').toLowerCase().includes(q)
+        (p.email || '').toLowerCase().includes(q) ||
+        (p.company || '').toLowerCase().includes(q) ||
+        (p.role || '').toLowerCase().includes(q)
       );
     });
   }, [participants, filter, statusFilter]);
@@ -40,38 +42,46 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
             first_name: r.nome || r.first_name || r.firstname || r.name || '',
             last_name: r.cognome || r.last_name || r.lastname || r.surname || '',
             email: r.email || r.mail || r['e-mail'] || '',
+            company: r.company || r.azienda || r.organization || r.org || '',
+            role: r.role || r.ruolo || r.title || r.job_title || '',
           }))
           .filter((r) => r.email);
         if (rows.length === 0) {
-          setUploadError('Nessuna riga valida trovata. Colonne attese: nome, cognome, email.');
+          setUploadError('No valid rows found. Expected columns: first_name, last_name, email (+ optional: company, role).');
           return;
         }
         onUpload(rows);
         if (fileRef.current) fileRef.current.value = '';
       },
-      error: (err) => setUploadError(`Errore lettura CSV: ${err.message}`),
+      error: (err) => setUploadError(`CSV read error: ${err.message}`),
     });
   };
 
   const handleManualAdd = async (e) => {
     e.preventDefault();
     setManualError(null);
-    const { first_name, last_name, email } = manualForm;
+    const { first_name, last_name, email, company, role } = manualForm;
     if (!first_name.trim() && !last_name.trim()) {
-      setManualError('Inserisci almeno nome o cognome');
+      setManualError('Enter at least a first or last name');
       return;
     }
     if (!email.trim() || !email.includes('@')) {
-      setManualError('Inserisci un indirizzo email valido');
+      setManualError('Enter a valid email address');
       return;
     }
     setManualSaving(true);
     try {
-      await onUpload([{ first_name: first_name.trim(), last_name: last_name.trim(), email: email.trim() }]);
-      setManualForm({ first_name: '', last_name: '', email: '' });
+      await onUpload([{
+        first_name: first_name.trim(),
+        last_name: last_name.trim(),
+        email: email.trim(),
+        company: company.trim(),
+        role: role.trim(),
+      }]);
+      setManualForm({ first_name: '', last_name: '', email: '', company: '', role: '' });
       setShowManualForm(false);
     } catch (err) {
-      setManualError('Errore nel salvataggio');
+      setManualError('Failed to save');
     } finally {
       setManualSaving(false);
     }
@@ -91,36 +101,36 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
       <div className="bg-white rounded-xl border p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Carica partecipanti</h2>
-            <p className="text-sm text-gray-500">CSV con colonne: <code className="text-xs bg-gray-100 px-1 rounded">nome</code>, <code className="text-xs bg-gray-100 px-1 rounded">cognome</code>, <code className="text-xs bg-gray-100 px-1 rounded">email</code></p>
+            <h2 className="text-base font-semibold text-gray-900">Upload Participants</h2>
+            <p className="text-sm text-gray-500">CSV with columns: <code className="text-xs bg-gray-100 px-1 rounded">first_name</code>, <code className="text-xs bg-gray-100 px-1 rounded">last_name</code>, <code className="text-xs bg-gray-100 px-1 rounded">email</code>, <code className="text-xs bg-gray-100 px-1 rounded">company</code>, <code className="text-xs bg-gray-100 px-1 rounded">role</code></p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <label className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover cursor-pointer">
-              Scegli CSV
+              Choose CSV
               <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
             </label>
             <button
               onClick={() => { setShowManualForm((v) => !v); setManualError(null); }}
               className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
             >
-              {showManualForm ? 'Chiudi' : '+ Aggiungi manualmente'}
+              {showManualForm ? 'Close' : '+ Add Manually'}
             </button>
             {hasData && (
               <button
                 onClick={onReset}
                 className="px-4 py-2 bg-white border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50"
               >
-                Azzera lista
+                Clear All
               </button>
             )}
           </div>
         </div>
 
         {showManualForm && (
-          <form onSubmit={handleManualAdd} className="border-t pt-4 mt-4 px-4 sm:px-6 pb-2">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <form onSubmit={handleManualAdd} className="border-t pt-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Nome</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">First Name</label>
                 <input
                   type="text"
                   value={manualForm.first_name}
@@ -130,7 +140,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Cognome</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Last Name</label>
                 <input
                   type="text"
                   value={manualForm.last_name}
@@ -145,7 +155,27 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                   type="email"
                   value={manualForm.email}
                   onChange={(e) => setManualForm((f) => ({ ...f, email: e.target.value }))}
-                  placeholder="mario.rossi@esempio.it"
+                  placeholder="mario.rossi@example.com"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Company</label>
+                <input
+                  type="text"
+                  value={manualForm.company}
+                  onChange={(e) => setManualForm((f) => ({ ...f, company: e.target.value }))}
+                  placeholder="Acme Inc."
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                <input
+                  type="text"
+                  value={manualForm.role}
+                  onChange={(e) => setManualForm((f) => ({ ...f, role: e.target.value }))}
+                  placeholder="Marketing Manager"
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
                 />
               </div>
@@ -156,7 +186,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                 disabled={manualSaving}
                 className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover disabled:opacity-50"
               >
-                {manualSaving ? 'Salvataggio...' : 'Aggiungi partecipante'}
+                {manualSaving ? 'Saving...' : 'Add Participant'}
               </button>
               {manualError && <span className="text-sm text-red-600">{manualError}</span>}
             </div>
@@ -164,7 +194,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
         )}
 
         {uploadError && (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 mx-4 sm:mx-6 mb-4">{uploadError}</div>
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 mt-4">{uploadError}</div>
         )}
       </div>
 
@@ -172,7 +202,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
         <div className="p-4 border-b flex flex-col sm:flex-row gap-3">
           <input
             type="text"
-            placeholder="Cerca nome, cognome o email..."
+            placeholder="Search name, email, company, role..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand"
@@ -182,8 +212,8 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 py-2 border rounded-lg bg-white"
           >
-            <option value="all">Tutti ({participants.length})</option>
-            <option value="checked">Check-in ({participants.filter((p) => p.checked_in).length})</option>
+            <option value="all">All ({participants.length})</option>
+            <option value="checked">Checked in ({participants.filter((p) => p.checked_in).length})</option>
             <option value="noshow">No-show ({participants.filter((p) => !p.checked_in).length})</option>
           </select>
         </div>
@@ -192,30 +222,34 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600 text-left">
               <tr>
-                <th className="px-4 py-3 font-medium">Nome</th>
-                <th className="px-4 py-3 font-medium">Cognome</th>
-                <th className="px-4 py-3 font-medium hidden md:table-cell">Email</th>
-                <th className="px-4 py-3 font-medium">Stato</th>
-                <th className="px-4 py-3 font-medium text-right">Azione</th>
+                <th className="px-4 py-3 font-medium">First Name</th>
+                <th className="px-4 py-3 font-medium">Last Name</th>
+                <th className="px-4 py-3 font-medium hidden lg:table-cell">Email</th>
+                <th className="px-4 py-3 font-medium hidden md:table-cell">Company</th>
+                <th className="px-4 py-3 font-medium hidden md:table-cell">Role</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {loading ? (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">Caricamento...</td></tr>
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">Loading...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">
-                  {participants.length === 0 ? 'Nessun partecipante. Carica un CSV per iniziare.' : 'Nessun risultato per questa ricerca.'}
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">
+                  {participants.length === 0 ? 'No participants yet. Upload a CSV to get started.' : 'No results for this search.'}
                 </td></tr>
               ) : (
                 filtered.map((p) => (
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-900">{p.first_name}</td>
                     <td className="px-4 py-3 text-gray-900">{p.last_name}</td>
-                    <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{p.email}</td>
+                    <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">{p.email}</td>
+                    <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{p.company || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{p.role || '—'}</td>
                     <td className="px-4 py-3">
                       {p.checked_in ? (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          Check-in
+                          Checked in
                         </span>
                       ) : (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
@@ -230,7 +264,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                           onClick={() => handleAction(p.email, 'check-out')}
                           className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50"
                         >
-                          Annulla
+                          Undo
                         </button>
                       ) : (
                         <button
@@ -238,7 +272,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                           onClick={() => handleAction(p.email, 'check-in')}
                           className="text-sm px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-hover disabled:opacity-50"
                         >
-                          Check-in
+                          Check in
                         </button>
                       )}
                     </td>

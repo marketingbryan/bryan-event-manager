@@ -6,19 +6,19 @@ export default function Dashboard({ stats, participants, loading }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Totale partecipanti" value={stats.total} />
-        <StatCard label="Check-in completati" value={stats.checked} valueClass="text-ok" />
-        <StatCard label="Mancanti" value={stats.missing} valueClass="text-danger" />
-        <StatCard label="% ingresso" value={`${stats.pct}%`} valueClass="text-brand" />
+        <StatCard label="Total Participants" value={stats.total} />
+        <StatCard label="Checked In" value={stats.checked} valueClass="text-ok" />
+        <StatCard label="Missing" value={stats.missing} valueClass="text-danger" />
+        <StatCard label="% Attendance" value={`${stats.pct}%`} valueClass="text-brand" />
       </div>
 
       <div className="bg-white rounded-xl border p-4 sm:p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-4">Andamento Check-in</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-4">Check-in Trend</h2>
         {loading ? (
-          <div className="h-64 flex items-center justify-center text-gray-400">Caricamento...</div>
+          <div className="h-64 flex items-center justify-center text-gray-400">Loading...</div>
         ) : trend.points.length === 0 ? (
           <div className="h-64 flex items-center justify-center text-gray-400 text-sm">
-            Nessun check-in registrato
+            No check-ins recorded yet
           </div>
         ) : (
           <TrendChart points={trend.points} total={stats.total} />
@@ -114,10 +114,10 @@ function TrendChart({ points, total }) {
           <circle key={i} cx={xFor(p.t)} cy={yFor(p.count)} r="3" fill="#4f46e5" />
         ))}
         <text x={padL} y={H - 8} fontSize="10" fill="#6b7280">
-          {points[0].t.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+          {points[0].t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
         </text>
         <text x={W - padR} y={H - 8} textAnchor="end" fontSize="10" fill="#6b7280">
-          {points[points.length - 1].t.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+          {points[points.length - 1].t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
         </text>
       </svg>
     </div>

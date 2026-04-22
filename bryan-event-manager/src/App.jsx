@@ -30,9 +30,9 @@ const API = {
 };
 
 const PAGE_TITLES = {
-  dashboard: 'Dashboard evento',
-  participants: 'Partecipanti',
-  scanner: 'Scanner QR',
+  dashboard: 'Event Dashboard',
+  participants: 'Participants',
+  scanner: 'QR Scanner',
   export: 'Export',
 };
 
@@ -54,7 +54,7 @@ export default function App() {
       const data = await API.list();
       setParticipants(data.participants || []);
     } catch (e) {
-      showToast('error', 'Errore nel caricamento partecipanti');
+      showToast('error', 'Failed to load participants');
     } finally {
       setLoading(false);
     }
@@ -79,7 +79,7 @@ export default function App() {
     } else {
       showToast(
         'success',
-        `Caricati ${res.inserted} partecipanti${res.skipped ? ` (${res.skipped} duplicati)` : ''}`
+        `Uploaded ${res.inserted} participant${res.inserted !== 1 ? 's' : ''}${res.skipped ? ` (${res.skipped} duplicate${res.skipped !== 1 ? 's' : ''})` : ''}`
       );
       await refresh();
       setPage('participants');
@@ -87,13 +87,13 @@ export default function App() {
   };
 
   const handleReset = async () => {
-    if (!confirm('Sei sicuro di voler cancellare tutti i partecipanti? Questa azione non \u00e8 reversibile.')) return;
+    if (!confirm('Are you sure you want to delete all participants? This action cannot be undone.')) return;
     const res = await API.reset();
     if (res.ok) {
-      showToast('success', 'Lista partecipanti azzerata');
+      showToast('success', 'Participant list cleared');
       await refresh();
     } else {
-      showToast('error', res.error || 'Errore');
+      showToast('error', res.error || 'Error');
     }
   };
 
@@ -101,27 +101,29 @@ export default function App() {
     const res = await API.checkin(email, action);
     if (res.ok) {
       if (res.alreadyCheckedIn) {
-        showToast('info', `${res.participant.first_name} ${res.participant.last_name} ha gi\u00e0 fatto check-in`);
+        showToast('info', `${res.participant.first_name} ${res.participant.last_name} is already checked in`);
       } else if (action === 'check-out') {
-        showToast('info', `Check-in annullato per ${res.participant.first_name} ${res.participant.last_name}`);
+        showToast('info', `Check-in undone for ${res.participant.first_name} ${res.participant.last_name}`);
       } else {
-        showToast('success', `Check-in: ${res.participant.first_name} ${res.participant.last_name}`);
+        showToast('success', `Checked in: ${res.participant.first_name} ${res.participant.last_name}`);
       }
       await refresh();
       return res;
     } else {
-      showToast('error', res.error || 'Partecipante non trovato');
+      showToast('error', res.error || 'Participant not found');
       return res;
     }
   };
 
   const handleExport = () => {
     const data = participants.map((p) => ({
-      Nome: p.first_name,
-      Cognome: p.last_name,
+      'First Name': p.first_name,
+      'Last Name': p.last_name,
       Email: p.email,
-      Stato: p.checked_in ? 'Check-in' : 'No-show',
-      DataCheckin: p.checked_in_at ? new Date(p.checked_in_at).toLocaleString('it-IT') : '',
+      Company: p.company || '',
+      Role: p.role || '',
+      Status: p.checked_in ? 'Checked in' : 'No-show',
+      'Check-in Time': p.checked_in_at ? new Date(p.checked_in_at).toLocaleString('en-GB') : '',
     }));
     const csv = Papa.unparse(data);
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -134,7 +136,7 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showToast('success', 'Export completato');
+    showToast('success', 'Export completed');
   };
 
   return (
@@ -156,7 +158,7 @@ export default function App() {
               <button
                 className="lg:hidden p-2 -ml-2 text-gray-600"
                 onClick={() => setSidebarOpen(true)}
-                aria-label="Apri menu"
+                aria-label="Open menu"
               >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
