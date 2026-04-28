@@ -7,7 +7,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
   const [busy, setBusy] = useState(null);
   const [uploadError, setUploadError] = useState(null);
   const [showManualForm, setShowManualForm] = useState(false);
-  const [manualForm, setManualForm] = useState({ first_name: '', last_name: '', email: '', company: '', role: '' });
+  const [manualForm, setManualForm] = useState({ first_name: '', last_name: '', email: '', company: '', role: '', rsvp: 'Invited' });
   const [manualError, setManualError] = useState(null);
   const [manualSaving, setManualSaving] = useState(false);
   const fileRef = useRef(null);
@@ -44,6 +44,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
             email: r.email || r.mail || r['e-mail'] || '',
             company: r.company || r.azienda || r.organization || r.org || '',
             role: r.role || r.ruolo || r.title || r.job_title || '',
+            rsvp: r.rsvp || r.stato || '',
           }))
           .filter((r) => r.email);
         if (rows.length === 0) {
@@ -75,10 +76,11 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
         first_name: first_name.trim(),
         last_name: last_name.trim(),
         email: email.trim(),
-        company: company.trim(),
-        role: role.trim(),
+        company: manualForm.company.trim(),
+        role: manualForm.role.trim(),
+        rsvp: manualForm.rsvp,
       }]);
-      setManualForm({ first_name: '', last_name: '', email: '', company: '', role: '' });
+      setManualForm({ first_name: '', last_name: '', email: '', company: '', role: '', rsvp: 'Invited' });
       setShowManualForm(false);
     } catch (err) {
       setManualError('Failed to save');
@@ -128,7 +130,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
 
         {showManualForm && (
           <form onSubmit={handleManualAdd} className="border-t pt-4 mt-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">First Name</label>
                 <input
@@ -179,6 +181,17 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">RSVP</label>
+                <select
+                  value={manualForm.rsvp}
+                  onChange={(e) => setManualForm((f) => ({ ...f, rsvp: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                >
+                  <option value="Invited">Invited</option>
+                  <option value="Registered">Registered</option>
+                </select>
+              </div>
             </div>
             <div className="mt-3 flex items-center gap-3">
               <button
@@ -227,15 +240,16 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                 <th className="px-4 py-3 font-medium hidden lg:table-cell">Email</th>
                 <th className="px-4 py-3 font-medium hidden md:table-cell">Company</th>
                 <th className="px-4 py-3 font-medium hidden md:table-cell">Role</th>
+                <th className="px-4 py-3 font-medium hidden md:table-cell">RSVP</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {loading ? (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">Loading...</td></tr>
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">Loading...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">
                   {participants.length === 0 ? 'No participants yet. Upload a CSV to get started.' : 'No results for this search.'}
                 </td></tr>
               ) : (
@@ -246,6 +260,15 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                     <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">{p.email}</td>
                     <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{p.company || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{p.role || '—'}</td>
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        p.rsvp === 'Registered'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {p.rsvp || 'Invited'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       {p.checked_in ? (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">

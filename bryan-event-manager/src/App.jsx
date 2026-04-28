@@ -21,11 +21,11 @@ const API = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirm: true }),
     }).then((r) => r.json()),
-  checkin: (email, action) =>
+  checkin: (email, action, extra = {}) =>
     fetch('/api/checkin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, action }),
+      body: JSON.stringify({ email, action, ...extra }),
     }).then((r) => r.json()),
 };
 
@@ -97,15 +97,16 @@ export default function App() {
     }
   };
 
-  const handleCheckin = async (email, action) => {
-    const res = await API.checkin(email, action);
+  const handleCheckin = async (email, action, extra = {}) => {
+    const res = await API.checkin(email, action, extra);
     if (res.ok) {
       if (res.alreadyCheckedIn) {
         showToast('info', `${res.participant.first_name} ${res.participant.last_name} is already checked in`);
       } else if (action === 'check-out') {
         showToast('info', `Check-in undone for ${res.participant.first_name} ${res.participant.last_name}`);
       } else {
-        showToast('success', `Checked in: ${res.participant.first_name} ${res.participant.last_name}`);
+        const label = res.created ? 'Added & checked in' : 'Checked in';
+        showToast('success', `${label}: ${res.participant.first_name} ${res.participant.last_name}`);
       }
       await refresh();
       return res;
@@ -122,6 +123,7 @@ export default function App() {
       Email: p.email,
       Company: p.company || '',
       Role: p.role || '',
+      RSVP: p.rsvp || 'Invited',
       Status: p.checked_in ? 'Checked in' : 'No-show',
       'Check-in Time': p.checked_in_at ? new Date(p.checked_in_at).toLocaleString('en-GB') : '',
     }));
@@ -193,7 +195,7 @@ export default function App() {
             />
           )}
           {page === 'scanner' && (
-            <ScannerPanel onEmail={(email) => handleCheckin(email, 'check-in')} />
+            <ScannerPanel onCheckin={(email, extra) => handleCheckin(email, 'check-in', extra)} />
           )}
           {page === 'export' && (
             <ExportPage stats={stats} onExport={handleExport} disabled={participants.length === 0} />

@@ -37,6 +37,7 @@ export async function ensureSchema() {
       email TEXT NOT NULL UNIQUE,
       company TEXT NOT NULL DEFAULT '',
       role TEXT NOT NULL DEFAULT '',
+      rsvp TEXT NOT NULL DEFAULT 'Invited',
       checked_in BOOLEAN NOT NULL DEFAULT FALSE,
       checked_in_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -46,6 +47,7 @@ export async function ensureSchema() {
   // Add columns if they don't exist (for existing databases)
   await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS company TEXT NOT NULL DEFAULT '';`);
   await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT '';`);
+  await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS rsvp TEXT NOT NULL DEFAULT 'Invited';`);
 }
 
 export function setCors(res) {

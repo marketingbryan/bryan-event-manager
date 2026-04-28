@@ -17,14 +17,17 @@ function extractEmail(text) {
   return null;
 }
 
-export default function ScannerPanel({ onEmail }) {
+const EMPTY_FORM = { first_name: '', last_name: '', email: '', company: '', role: '', rsvp: 'Invited' };
+
+export default function ScannerPanel({ onCheckin }) {
   const scannerRef = useRef(null);
   const html5Ref = useRef(null);
   const lastScanRef = useRef({ text: null, time: 0 });
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
-  const [manualEmail, setManualEmail] = useState('');
+  const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     return () => { stopScanner(); };
@@ -71,7 +74,7 @@ export default function ScannerPanel({ onEmail }) {
       return;
     }
 
-    const res = await onEmail(email);
+    const res = await onCheckin(email, {});
     if (res && res.ok) {
       addHistory({
         email,
@@ -90,84 +93,160 @@ export default function ScannerPanel({ onEmail }) {
 
   const handleManualSubmit = async (e) => {
     e.preventDefault();
-    const email = manualEmail.trim().toLowerCase();
+    const email = form.email.trim().toLowerCase();
     if (!email || !email.includes('@')) {
       setError('Please enter a valid email address');
       return;
     }
     setError(null);
-    const res = await onEmail(email);
+    setSaving(true);
+
+    // Pass extra fields so the API can create the participant if not found
+    const extra = {
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      company: form.company.trim(),
+      role: form.role.trim(),
+      rsvp: form.rsvp,
+    };
+
+    const res = await onCheckin(email, extra);
     if (res && res.ok) {
       addHistory({
         email,
         raw: email,
-        status: res.alreadyCheckedIn ? 'already' : 'ok',
+        status: res.alreadyCheckedIn ? 'already' : res.created ? 'created' : 'ok',
         name: `${res.participant.first_name} ${res.participant.last_name}`,
       });
-      setManualEmail('');
+      setForm({ ...EMPTY_FORM });
     } else {
       addHistory({ email, raw: email, status: 'error', message: res?.error || 'Not found' });
     }
+    setSaving(false);
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="bg-white rounded-xl border p-4 sm:p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-3">QR Scanner</h2>
-        <p className="text-sm text-gray-500 mb-4">
-          Point the camera at the participant's QR code for automatic check-in.
-        </p>
+      <div className="space-y-6">
+        <div className="bg-white rounded-xl border p-4 sm:p-6">
+          <h2 className="text-base font-semibold text-gray-900 mb-3">QR Scanner</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Point the camera at the participant's QR code for automatic check-in.
+          </p>
 
-        <div
-          id="qr-reader"
-          ref={scannerRef}
-          className="w-full aspect-square bg-gray-900 rounded-lg overflow-hidden"
-          style={{ maxWidth: 400 }}
-        />
+          <div
+            id="qr-reader"
+            ref={scannerRef}
+            className="w-full aspect-square bg-gray-900 rounded-lg overflow-hidden"
+            style={{ maxWidth: 400 }}
+          />
 
-        <div className="mt-4 flex gap-2">
-          {!scanning ? (
-            <button
-              onClick={startScanner}
-              className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover"
-            >
-              Start Scanner
-            </button>
-          ) : (
-            <button
-              onClick={stopScanner}
-              className="px-4 py-2 bg-white border text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-100"
-            >
-              Stop Scanner
-            </button>
+          <div className="mt-4 flex gap-2">
+            {!scanning ? (
+              <button
+                onClick={startScanner}
+                className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover"
+              >
+                Start Scanner
+              </button>
+            ) : (
+              <button
+                onClick={stopScanner}
+                className="px-4 py-2 bg-white border text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-100"
+              >
+                Stop Scanner
+              </button>
+            )}
+          </div>
+
+          {error && (
+            <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</div>
           )}
         </div>
 
-        {error && (
-          <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</div>
-        )}
-
-        <form onSubmit={handleManualSubmit} className="mt-5 pt-5 border-t">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Manual check-in by email</label>
-          <div className="flex gap-2">
-            <input
-              type="email"
-              value={manualEmail}
-              onChange={(e) => setManualEmail(e.target.value)}
-              placeholder="email@example.com"
-              className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand"
-            />
+        <div className="bg-white rounded-xl border p-4 sm:p-6">
+          <h2 className="text-base font-semibold text-gray-900 mb-3">Manual Check-in</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Enter participant details below. If the email already exists, they'll be checked in.
+            If not, they'll be added and checked in automatically.
+          </p>
+          <form onSubmit={handleManualSubmit}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">First Name</label>
+                <input
+                  type="text"
+                  value={form.first_name}
+                  onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
+                  placeholder="Mario"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Last Name</label>
+                <input
+                  type="text"
+                  value={form.last_name}
+                  onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
+                  placeholder="Rossi"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Email *</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="mario.rossi@example.com"
+                  required
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Company</label>
+                <input
+                  type="text"
+                  value={form.company}
+                  onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+                  placeholder="Acme Inc."
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                <input
+                  type="text"
+                  value={form.role}
+                  onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+                  placeholder="Marketing Manager"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">RSVP</label>
+                <select
+                  value={form.rsvp}
+                  onChange={(e) => setForm((f) => ({ ...f, rsvp: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                >
+                  <option value="Invited">Invited</option>
+                  <option value="Registered">Registered</option>
+                </select>
+              </div>
+            </div>
             <button
               type="submit"
-              className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800"
+              disabled={saving}
+              className="mt-4 px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover disabled:opacity-50 w-full sm:w-auto"
             >
-              Check in
+              {saving ? 'Processing...' : 'Check in'}
             </button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border p-4 sm:p-6">
+      <div className="bg-white rounded-xl border p-4 sm:p-6 lg:self-start">
         <h2 className="text-base font-semibold text-gray-900 mb-3">Recent Scans</h2>
         {history.length === 0 ? (
           <p className="text-sm text-gray-400">No scans yet.</p>
@@ -177,7 +256,7 @@ export default function ScannerPanel({ onEmail }) {
               <li
                 key={i}
                 className={`p-3 rounded-lg border text-sm ${
-                  h.status === 'ok'
+                  h.status === 'ok' || h.status === 'created'
                     ? 'bg-green-50 border-green-200'
                     : h.status === 'already'
                     ? 'bg-amber-50 border-amber-200'
@@ -191,6 +270,7 @@ export default function ScannerPanel({ onEmail }) {
                     </div>
                     <div className="text-xs text-gray-600 mt-0.5">
                       {h.status === 'ok' && 'Check-in completed'}
+                      {h.status === 'created' && 'Added & checked in'}
                       {h.status === 'already' && 'Already checked in'}
                       {h.status === 'error' && (h.message || 'Error')}
                     </div>

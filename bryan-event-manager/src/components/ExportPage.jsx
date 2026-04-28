@@ -30,6 +30,7 @@ export default function ExportPage({ stats, onExport, disabled }) {
             <li>Email</li>
             <li>Company</li>
             <li>Role</li>
+            <li>RSVP (Invited / Registered)</li>
             <li>Status (Checked in / No-show)</li>
             <li>Check-in Time</li>
           </ul>

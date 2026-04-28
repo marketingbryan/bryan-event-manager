@@ -1,6 +1,6 @@
 // /api/participants
 // GET    -> list all participants
-// POST   -> body: { participants: [{first_name, last_name, email, company?, role?}, ...] }
+// POST   -> body: { participants: [{first_name, last_name, email, company?, role?, rsvp?}, ...] }
 // DELETE -> body: { confirm: true } to clear all participants (reset event)
 import { query, ensureSchema, setCors, normalizeEmail } from './_db.js';
 
@@ -15,7 +15,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const { rows } = await query(
-        `SELECT id, first_name, last_name, email, company, role, checked_in, checked_in_at, created_at
+        `SELECT id, first_name, last_name, email, company, role, rsvp, checked_in, checked_in_at, created_at
          FROM participants
          ORDER BY last_name ASC, first_name ASC`
       );
@@ -39,6 +39,8 @@ export default async function handler(req, res) {
         const email = normalizeEmail(p.email);
         const company = String(p.company || '').trim();
         const role = String(p.role || '').trim();
+        const rsvpRaw = String(p.rsvp || '').trim();
+        const rsvp = rsvpRaw === 'Registered' ? 'Registered' : 'Invited';
 
         if (!email || !email.includes('@')) {
           errors.push({ row: p, error: 'Invalid email' });
@@ -50,11 +52,11 @@ export default async function handler(req, res) {
         }
 
         const result = await query(
-          `INSERT INTO participants (first_name, last_name, email, company, role)
-           VALUES ($1, $2, $3, $4, $5)
+          `INSERT INTO participants (first_name, last_name, email, company, role, rsvp)
+           VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (email) DO NOTHING
            RETURNING id`,
-          [first, last, email, company, role]
+          [first, last, email, company, role, rsvp]
         );
         if (result.rowCount > 0) inserted++;
         else skipped++;

@@ -1,5 +1,5 @@
-first_name,last_name,email,company,role
-Davide,Berardino,davide.berardino@bryan.it,Bryan,CEO
-Mario,Rossi,mario.rossi@esempio.it,Acme Inc.,Marketing Manager
-Giulia,Bianchi,giulia.bianchi@esempio.it,TechCorp,Developer
-Luca,Verdi,luca.verdi@esempio.it,StartupXYZ,Product Designer
+first_name,last_name,email,company,role,rsvp
+Davide,Berardino,davide.berardino@bryan.it,Bryan,CEO,Registered
+Mario,Rossi,mario.rossi@esempio.it,Acme Inc.,Marketing Manager,Invited
+Giulia,Bianchi,giulia.bianchi@esempio.it,TechCorp,Developer,Registered
+Luca,Verdi,luca.verdi@esempio.it,StartupXYZ,Product Designer,Invited
