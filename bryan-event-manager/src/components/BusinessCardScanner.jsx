@@ -2,17 +2,148 @@ import { useRef, useState, useCallback } from 'react';
 import Tesseract from 'tesseract.js';
 
 /**
+ * Clean a single OCR line: fix common OCR artifacts.
+ */
+function cleanLine(line) {
+  return line
+    .replace(/[|]/g, 'l')         // OCR often reads l as |
+    .replace(/[{}[\]]/g, '')      // stray brackets
+    .replace(/\s{2,}/g, ' ')     // collapse whitespace
+    .trim();
+}
+
+/**
+ * Classify a line into a category with a confidence score.
+ * Returns { type: 'junk'|'email'|'phone'|'url'|'address'|'name'|'role'|'company'|'unknown', score: number }
+ */
+function classifyLine(line, emailDomainHint) {
+  // ── Email ──
+  if (/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/.test(line)) {
+    return { type: 'email', score: 1 };
+  }
+
+  // ── URL / website ──
+  if (/^(www\.|http|https)/i.test(line) || /\.(com|org|net|it|eu|io|co)\b/i.test(line)) {
+    // But not if it also looks like a company name with a domain suffix
+    if (line.split(/\s+/).length <= 1) return { type: 'url', score: 1 };
+  }
+
+  // ── Phone / fax ──
+  // A line is "phone" if it's mostly digits, dashes, parens, spaces, plus sign
+  const digitsOnly = line.replace(/[^\d]/g, '');
+  const nonDigitLetters = line.replace(/[\d\s\-+()./:,]/g, '');
+  if (digitsOnly.length >= 6 && nonDigitLetters.length <= 5) {
+    return { type: 'phone', score: 1 };
+  }
+  if (/\b(tel|phone|fax|cell|mob|whatsapp)\b[:\s]*/i.test(line)) {
+    return { type: 'phone', score: 1 };
+  }
+
+  // ── Address (street, zip, city patterns) ──
+  if (/\b\d{4,6}\b/.test(line) && /\b(via|viale|corso|piazza|strada|street|road|ave|blvd|suite|floor|piano)\b/i.test(line)) {
+    return { type: 'address', score: 1 };
+  }
+  if (/\b(via|viale|corso|piazza|piazzale|strada|largo|vicolo)\s/i.test(line) && /\d/.test(line)) {
+    return { type: 'address', score: 1 };
+  }
+  // ZIP code patterns (Italian CAP, US zip, etc.)
+  if (/^\d{5}[\s,]/.test(line) || /\b\d{5}\s+[A-Z]/i.test(line)) {
+    return { type: 'address', score: 0.8 };
+  }
+
+  // ── Junk: too short, too noisy ──
+  if (line.length < 3) return { type: 'junk', score: 1 };
+  // More than 40% non-letter characters → probably junk or a phone/code
+  const letters = line.replace(/[^a-zA-ZÀ-ÿ]/g, '');
+  if (letters.length < line.length * 0.5 && line.length > 3) {
+    return { type: 'junk', score: 0.7 };
+  }
+
+  // ── Role / job title ──
+  const roleKeywords = /\b(ceo|cto|cfo|coo|cmo|cdo|cio|cpo|vp|svp|evp|avp|president|vice\s*president|director|manager|managing|head\sof|lead|chief|founder|co[\-\s]?founder|partner|analyst|consultant|engineer|developer|designer|coordinator|specialist|advisor|associate|assistant|intern|executive|officer|responsabile|direttore|amministratore|delegato|socio|titolare|legale|rappresentante|professore|dott\.?|dr\.?|ing\.?|avv\.?|arch\.?|prof\.?|senior|junior|account|sales|marketing|finance|operations|strategy|business\sdevelopment|project|product|program|creative|art\sdirector|brand|communication|hr|human\sresources|legal|compliance|research|scientist|architect|planner|recruiter|buyer|procurement|logistics|supply\schain|quality|safety|sustainability|digital|data|software|devops|cloud|security|network|support|customer|client|service|success|growth|innovation|transformation)\b/i;
+  const roleScore = (line.match(roleKeywords) || []).length;
+  if (roleScore >= 1) {
+    // If it's a short line with role keywords, high confidence
+    const words = line.split(/\s+/);
+    if (words.length <= 5) return { type: 'role', score: 0.7 + Math.min(roleScore * 0.1, 0.3) };
+    // Longer line with role keyword — might be role or might be something else
+    return { type: 'role', score: 0.5 };
+  }
+
+  // ── Company ──
+  const companyIndicators = /\b(inc\.?|corp\.?|ltd\.?|llc|gmbh|srl|s\.r\.l\.?|spa|s\.p\.a\.?|sas|s\.a\.s\.?|sarl|snc|s\.n\.c\.?|s\.s\.?|group|gruppo|holdings|ventures|capital|labs|laboratory|studio|agency|agenzia|consulting|consultancy|solutions|technologies|technology|tech|digital|media|partners|co\.?|company|limited|enterprise|enterprises|services|international|global|systems|network|foundation|fondazione|associazione|onlus|cooperative|società)\b/i;
+  const companyScore = (line.match(companyIndicators) || []).length;
+  // Check if the email domain hint appears in this line
+  let domainBoost = 0;
+  if (emailDomainHint && emailDomainHint.length >= 3) {
+    if (line.toLowerCase().includes(emailDomainHint.toLowerCase())) {
+      domainBoost = 0.4;
+    }
+  }
+  if (companyScore >= 1 || domainBoost > 0) {
+    return { type: 'company', score: 0.5 + Math.min(companyScore * 0.15, 0.3) + domainBoost };
+  }
+  // ALL CAPS line with 1-4 words is often a company name on business cards
+  const words = line.split(/\s+/);
+  if (line === line.toUpperCase() && words.length >= 1 && words.length <= 4 && letters.length >= 3) {
+    return { type: 'company', score: 0.5 };
+  }
+
+  // ── Name ──
+  // A name is typically 2-3 words, each starting with uppercase, no numbers, no special chars
+  const nameWords = line.split(/\s+/);
+  const allWordsCapitalized = nameWords.every((w) => /^[A-ZÀ-Ü]/.test(w));
+  const noNumbers = !/\d/.test(line);
+  const noSpecial = !/[#$%^&*()+=\[\]{}<>|\\\/~`]/.test(line);
+  const reasonableLength = nameWords.length >= 2 && nameWords.length <= 4;
+  const shortEnough = line.length <= 40;
+
+  if (allWordsCapitalized && noNumbers && noSpecial && reasonableLength && shortEnough) {
+    return { type: 'name', score: 0.8 };
+  }
+  // Single capitalized word could be a first or last name alone
+  if (nameWords.length === 1 && allWordsCapitalized && noNumbers && noSpecial && line.length >= 2 && line.length <= 20) {
+    return { type: 'name', score: 0.3 };
+  }
+  // 2-3 words but not all capitalized — weaker name signal
+  if (nameWords.length >= 2 && nameWords.length <= 3 && noNumbers && noSpecial && shortEnough) {
+    return { type: 'name', score: 0.4 };
+  }
+
+  return { type: 'unknown', score: 0 };
+}
+
+/**
+ * Extract the domain "name" from an email (e.g., "mario@acme.com" → "acme").
+ */
+function getDomainHint(email) {
+  if (!email) return '';
+  const match = email.match(/@([^.]+)\./);
+  if (!match) return '';
+  const domain = match[1].toLowerCase();
+  // Skip generic email providers
+  const generic = ['gmail', 'yahoo', 'hotmail', 'outlook', 'live', 'icloud', 'aol', 'mail', 'libero', 'virgilio', 'tiscali', 'alice', 'tin', 'fastwebnet', 'pec', 'aruba', 'protonmail', 'pm', 'proton', 'posteo', 'tutanota', 'msn', 'me'];
+  if (generic.includes(domain)) return '';
+  return domain;
+}
+
+/**
  * Parse raw OCR text from a business card into structured fields.
+ * Uses a scoring system: each line is scored for how likely it is to be
+ * a name, company, role, etc. The highest-scoring line for each category wins.
  */
 function parseCardText(raw) {
-  const lines = raw
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 1);
-
   const result = { first_name: '', last_name: '', email: '', company: '', role: '' };
 
-  // 1. Extract email
+  // Step 1: Clean and split lines
+  const lines = raw
+    .split('\n')
+    .map(cleanLine)
+    .filter((l) => l.length > 1);
+
+  if (lines.length === 0) return result;
+
+  // Step 2: Extract email first (most reliable via regex)
   for (const line of lines) {
     const emailMatch = line.match(/([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/);
     if (emailMatch) {
@@ -21,64 +152,89 @@ function parseCardText(raw) {
     }
   }
 
-  // 2. Extract phone (just to skip it — not a field we need)
-  const phonePattern = /[\+]?[\d\s\-().]{7,}/;
+  const domainHint = getDomainHint(result.email);
 
-  // 3. Classify remaining lines
-  const roleKeywords = /\b(ceo|cto|cfo|coo|cmo|vp|president|director|manager|head|lead|chief|founder|partner|analyst|consultant|engineer|developer|designer|coordinator|specialist|advisor|associate|assistant|intern|executive|officer)\b/i;
-  const companyIndicators = /\b(inc|corp|ltd|llc|gmbh|srl|spa|sas|sarl|group|holdings|ventures|capital|labs|studio|agency|consulting|solutions|technologies|tech|digital|media|partners|co\.|company)\b/i;
+  // Step 3: Classify every line
+  const classified = lines.map((line, index) => ({
+    line,
+    index,
+    ...classifyLine(line, domainHint),
+    // Position bonus: names tend to appear first on business cards
+    positionBonus: index < 3 ? 0.1 * (3 - index) : 0,
+  }));
 
-  const candidateLines = lines.filter((l) => {
-    // Skip lines that are just email, phone, URL, or very short
-    if (l.includes('@')) return false;
-    if (/^(www\.|http|https)/.test(l)) return false;
-    if (phonePattern.test(l) && l.replace(/[\d\s\-+().]/g, '').length < 3) return false;
-    if (l.length < 2) return false;
-    return true;
-  });
+  // Step 4: Filter out lines we've already used or that are junk/phone/url/address/email
+  const skipTypes = new Set(['email', 'phone', 'url', 'address', 'junk']);
+  const candidates = classified.filter((c) => !skipTypes.has(c.type));
 
-  let nameLine = null;
-  let roleLine = null;
-  let companyLine = null;
+  // Step 5: Pick best line for each field using scores
+  // Name: highest 'name' score (with position bonus since name is usually first)
+  const nameCandidates = candidates
+    .filter((c) => c.type === 'name' || c.type === 'unknown')
+    .map((c) => ({ ...c, finalScore: (c.type === 'name' ? c.score : 0.2) + c.positionBonus }))
+    .sort((a, b) => b.finalScore - a.finalScore);
 
-  for (const line of candidateLines) {
-    if (!companyLine && companyIndicators.test(line)) {
-      companyLine = line;
-    } else if (!roleLine && roleKeywords.test(line)) {
-      roleLine = line;
-    } else if (!nameLine && /^[A-ZÀ-Ü]/.test(line) && line.split(/\s+/).length <= 4) {
-      // Likely a name: starts with capital, 1-4 words
-      nameLine = line;
-    }
-  }
+  const roleCandidates = candidates
+    .filter((c) => c.type === 'role')
+    .sort((a, b) => b.score - a.score);
 
-  // If no name found yet, use first candidate line
-  if (!nameLine && candidateLines.length > 0) {
-    nameLine = candidateLines[0];
-  }
-  // If no company found and there are remaining lines, try the ones not used
-  if (!companyLine) {
-    const remaining = candidateLines.filter((l) => l !== nameLine && l !== roleLine);
-    if (remaining.length > 0) companyLine = remaining[0];
-  }
-  if (!roleLine) {
-    const remaining = candidateLines.filter((l) => l !== nameLine && l !== companyLine);
-    if (remaining.length > 0) roleLine = remaining[0];
-  }
+  const companyCandidates = candidates
+    .filter((c) => c.type === 'company')
+    .sort((a, b) => b.score - a.score);
 
-  // Parse name
-  if (nameLine) {
-    const parts = nameLine.split(/\s+/);
+  // Assign: pick the best for each, but don't use the same line twice
+  const usedLines = new Set();
+
+  // Name first (most important to get right, appears first on card)
+  if (nameCandidates.length > 0) {
+    const best = nameCandidates[0];
+    const parts = best.line.split(/\s+/);
     if (parts.length >= 2) {
       result.first_name = parts[0];
       result.last_name = parts.slice(1).join(' ');
     } else {
       result.first_name = parts[0] || '';
     }
+    usedLines.add(best.line);
   }
 
-  if (companyLine) result.company = companyLine;
-  if (roleLine) result.role = roleLine;
+  // Company
+  if (companyCandidates.length > 0) {
+    const best = companyCandidates.find((c) => !usedLines.has(c.line));
+    if (best) {
+      result.company = best.line;
+      usedLines.add(best.line);
+    }
+  }
+
+  // Role
+  if (roleCandidates.length > 0) {
+    const best = roleCandidates.find((c) => !usedLines.has(c.line));
+    if (best) {
+      result.role = best.line;
+      usedLines.add(best.line);
+    }
+  }
+
+  // Step 6: If we still have empty fields, try unused candidates as fallback
+  const unused = candidates.filter((c) => !usedLines.has(c.line));
+  if (!result.first_name && !result.last_name && unused.length > 0) {
+    // Pick the first unused line that has at least some letters
+    const fallback = unused.find((c) => c.line.replace(/[^a-zA-ZÀ-ÿ]/g, '').length >= 2);
+    if (fallback) {
+      const parts = fallback.line.split(/\s+/);
+      result.first_name = parts[0] || '';
+      result.last_name = parts.slice(1).join(' ');
+      usedLines.add(fallback.line);
+    }
+  }
+  if (!result.company && unused.length > 0) {
+    const fallback = unused.find((c) => !usedLines.has(c.line) && c.type !== 'name');
+    if (fallback) {
+      result.company = fallback.line;
+      usedLines.add(fallback.line);
+    }
+  }
 
   return result;
 }
