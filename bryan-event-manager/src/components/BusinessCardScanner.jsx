@@ -2,251 +2,82 @@ import { useRef, useState, useCallback } from 'react';
 import Tesseract from 'tesseract.js';
 
 /**
- * Clean a single OCR line: fix common OCR artifacts.
+ * Preprocess an image on canvas for better OCR:
+ * convert to grayscale, boost contrast, apply threshold.
  */
-function cleanLine(line) {
-  return line
-    .replace(/[|]/g, 'l')         // OCR often reads l as |
-    .replace(/[{}[\]]/g, '')      // stray brackets
-    .replace(/\s{2,}/g, ' ')     // collapse whitespace
-    .trim();
+function preprocessImage(canvas) {
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = imageData.data;
+
+  for (let i = 0; i < d.length; i += 4) {
+    // Grayscale
+    const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    // Contrast boost (1.5x around midpoint)
+    const contrast = Math.min(255, Math.max(0, ((gray - 128) * 1.5) + 128));
+    // Threshold: push to black or white for cleaner OCR
+    const final = contrast > 140 ? 255 : 0;
+    d[i] = d[i + 1] = d[i + 2] = final;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toDataURL('image/png');
 }
 
 /**
- * Classify a line into a category with a confidence score.
- * Returns { type: 'junk'|'email'|'phone'|'url'|'address'|'name'|'role'|'company'|'unknown', score: number }
+ * Extract usable text lines from raw OCR output.
+ * Cleans noise but keeps everything — the user decides what's what.
  */
-function classifyLine(line, emailDomainHint) {
-  // ── Email ──
-  if (/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/.test(line)) {
-    return { type: 'email', score: 1 };
-  }
-
-  // ── URL / website ──
-  if (/^(www\.|http|https)/i.test(line) || /\.(com|org|net|it|eu|io|co)\b/i.test(line)) {
-    // But not if it also looks like a company name with a domain suffix
-    if (line.split(/\s+/).length <= 1) return { type: 'url', score: 1 };
-  }
-
-  // ── Phone / fax ──
-  // A line is "phone" if it's mostly digits, dashes, parens, spaces, plus sign
-  const digitsOnly = line.replace(/[^\d]/g, '');
-  const nonDigitLetters = line.replace(/[\d\s\-+()./:,]/g, '');
-  if (digitsOnly.length >= 6 && nonDigitLetters.length <= 5) {
-    return { type: 'phone', score: 1 };
-  }
-  if (/\b(tel|phone|fax|cell|mob|whatsapp)\b[:\s]*/i.test(line)) {
-    return { type: 'phone', score: 1 };
-  }
-
-  // ── Address (street, zip, city patterns) ──
-  if (/\b\d{4,6}\b/.test(line) && /\b(via|viale|corso|piazza|strada|street|road|ave|blvd|suite|floor|piano)\b/i.test(line)) {
-    return { type: 'address', score: 1 };
-  }
-  if (/\b(via|viale|corso|piazza|piazzale|strada|largo|vicolo)\s/i.test(line) && /\d/.test(line)) {
-    return { type: 'address', score: 1 };
-  }
-  // ZIP code patterns (Italian CAP, US zip, etc.)
-  if (/^\d{5}[\s,]/.test(line) || /\b\d{5}\s+[A-Z]/i.test(line)) {
-    return { type: 'address', score: 0.8 };
-  }
-
-  // ── Junk: too short, too noisy ──
-  if (line.length < 3) return { type: 'junk', score: 1 };
-  // More than 40% non-letter characters → probably junk or a phone/code
-  const letters = line.replace(/[^a-zA-ZÀ-ÿ]/g, '');
-  if (letters.length < line.length * 0.5 && line.length > 3) {
-    return { type: 'junk', score: 0.7 };
-  }
-
-  // ── Role / job title ──
-  const roleKeywords = /\b(ceo|cto|cfo|coo|cmo|cdo|cio|cpo|vp|svp|evp|avp|president|vice\s*president|director|manager|managing|head\sof|lead|chief|founder|co[\-\s]?founder|partner|analyst|consultant|engineer|developer|designer|coordinator|specialist|advisor|associate|assistant|intern|executive|officer|responsabile|direttore|amministratore|delegato|socio|titolare|legale|rappresentante|professore|dott\.?|dr\.?|ing\.?|avv\.?|arch\.?|prof\.?|senior|junior|account|sales|marketing|finance|operations|strategy|business\sdevelopment|project|product|program|creative|art\sdirector|brand|communication|hr|human\sresources|legal|compliance|research|scientist|architect|planner|recruiter|buyer|procurement|logistics|supply\schain|quality|safety|sustainability|digital|data|software|devops|cloud|security|network|support|customer|client|service|success|growth|innovation|transformation)\b/i;
-  const roleScore = (line.match(roleKeywords) || []).length;
-  if (roleScore >= 1) {
-    // If it's a short line with role keywords, high confidence
-    const words = line.split(/\s+/);
-    if (words.length <= 5) return { type: 'role', score: 0.7 + Math.min(roleScore * 0.1, 0.3) };
-    // Longer line with role keyword — might be role or might be something else
-    return { type: 'role', score: 0.5 };
-  }
-
-  // ── Company ──
-  const companyIndicators = /\b(inc\.?|corp\.?|ltd\.?|llc|gmbh|srl|s\.r\.l\.?|spa|s\.p\.a\.?|sas|s\.a\.s\.?|sarl|snc|s\.n\.c\.?|s\.s\.?|group|gruppo|holdings|ventures|capital|labs|laboratory|studio|agency|agenzia|consulting|consultancy|solutions|technologies|technology|tech|digital|media|partners|co\.?|company|limited|enterprise|enterprises|services|international|global|systems|network|foundation|fondazione|associazione|onlus|cooperative|società)\b/i;
-  const companyScore = (line.match(companyIndicators) || []).length;
-  // Check if the email domain hint appears in this line
-  let domainBoost = 0;
-  if (emailDomainHint && emailDomainHint.length >= 3) {
-    if (line.toLowerCase().includes(emailDomainHint.toLowerCase())) {
-      domainBoost = 0.4;
-    }
-  }
-  if (companyScore >= 1 || domainBoost > 0) {
-    return { type: 'company', score: 0.5 + Math.min(companyScore * 0.15, 0.3) + domainBoost };
-  }
-  // ALL CAPS line with 1-4 words is often a company name on business cards
-  const words = line.split(/\s+/);
-  if (line === line.toUpperCase() && words.length >= 1 && words.length <= 4 && letters.length >= 3) {
-    return { type: 'company', score: 0.5 };
-  }
-
-  // ── Name ──
-  // A name is typically 2-3 words, each starting with uppercase, no numbers, no special chars
-  const nameWords = line.split(/\s+/);
-  const allWordsCapitalized = nameWords.every((w) => /^[A-ZÀ-Ü]/.test(w));
-  const noNumbers = !/\d/.test(line);
-  const noSpecial = !/[#$%^&*()+=\[\]{}<>|\\\/~`]/.test(line);
-  const reasonableLength = nameWords.length >= 2 && nameWords.length <= 4;
-  const shortEnough = line.length <= 40;
-
-  if (allWordsCapitalized && noNumbers && noSpecial && reasonableLength && shortEnough) {
-    return { type: 'name', score: 0.8 };
-  }
-  // Single capitalized word could be a first or last name alone
-  if (nameWords.length === 1 && allWordsCapitalized && noNumbers && noSpecial && line.length >= 2 && line.length <= 20) {
-    return { type: 'name', score: 0.3 };
-  }
-  // 2-3 words but not all capitalized — weaker name signal
-  if (nameWords.length >= 2 && nameWords.length <= 3 && noNumbers && noSpecial && shortEnough) {
-    return { type: 'name', score: 0.4 };
-  }
-
-  return { type: 'unknown', score: 0 };
-}
-
-/**
- * Extract the domain "name" from an email (e.g., "mario@acme.com" → "acme").
- */
-function getDomainHint(email) {
-  if (!email) return '';
-  const match = email.match(/@([^.]+)\./);
-  if (!match) return '';
-  const domain = match[1].toLowerCase();
-  // Skip generic email providers
-  const generic = ['gmail', 'yahoo', 'hotmail', 'outlook', 'live', 'icloud', 'aol', 'mail', 'libero', 'virgilio', 'tiscali', 'alice', 'tin', 'fastwebnet', 'pec', 'aruba', 'protonmail', 'pm', 'proton', 'posteo', 'tutanota', 'msn', 'me'];
-  if (generic.includes(domain)) return '';
-  return domain;
-}
-
-/**
- * Parse raw OCR text from a business card into structured fields.
- * Uses a scoring system: each line is scored for how likely it is to be
- * a name, company, role, etc. The highest-scoring line for each category wins.
- */
-function parseCardText(raw) {
-  const result = { first_name: '', last_name: '', email: '', company: '', role: '' };
-
-  // Step 1: Clean and split lines
-  const lines = raw
+function extractLines(raw) {
+  return raw
     .split('\n')
-    .map(cleanLine)
-    .filter((l) => l.length > 1);
-
-  if (lines.length === 0) return result;
-
-  // Step 2: Extract email first (most reliable via regex)
-  for (const line of lines) {
-    const emailMatch = line.match(/([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/);
-    if (emailMatch) {
-      result.email = emailMatch[1].toLowerCase();
-      break;
-    }
-  }
-
-  const domainHint = getDomainHint(result.email);
-
-  // Step 3: Classify every line
-  const classified = lines.map((line, index) => ({
-    line,
-    index,
-    ...classifyLine(line, domainHint),
-    // Position bonus: names tend to appear first on business cards
-    positionBonus: index < 3 ? 0.1 * (3 - index) : 0,
-  }));
-
-  // Step 4: Filter out lines we've already used or that are junk/phone/url/address/email
-  const skipTypes = new Set(['email', 'phone', 'url', 'address', 'junk']);
-  const candidates = classified.filter((c) => !skipTypes.has(c.type));
-
-  // Step 5: Pick best line for each field using scores
-  // Name: highest 'name' score (with position bonus since name is usually first)
-  const nameCandidates = candidates
-    .filter((c) => c.type === 'name' || c.type === 'unknown')
-    .map((c) => ({ ...c, finalScore: (c.type === 'name' ? c.score : 0.2) + c.positionBonus }))
-    .sort((a, b) => b.finalScore - a.finalScore);
-
-  const roleCandidates = candidates
-    .filter((c) => c.type === 'role')
-    .sort((a, b) => b.score - a.score);
-
-  const companyCandidates = candidates
-    .filter((c) => c.type === 'company')
-    .sort((a, b) => b.score - a.score);
-
-  // Assign: pick the best for each, but don't use the same line twice
-  const usedLines = new Set();
-
-  // Name first (most important to get right, appears first on card)
-  if (nameCandidates.length > 0) {
-    const best = nameCandidates[0];
-    const parts = best.line.split(/\s+/);
-    if (parts.length >= 2) {
-      result.first_name = parts[0];
-      result.last_name = parts.slice(1).join(' ');
-    } else {
-      result.first_name = parts[0] || '';
-    }
-    usedLines.add(best.line);
-  }
-
-  // Company
-  if (companyCandidates.length > 0) {
-    const best = companyCandidates.find((c) => !usedLines.has(c.line));
-    if (best) {
-      result.company = best.line;
-      usedLines.add(best.line);
-    }
-  }
-
-  // Role
-  if (roleCandidates.length > 0) {
-    const best = roleCandidates.find((c) => !usedLines.has(c.line));
-    if (best) {
-      result.role = best.line;
-      usedLines.add(best.line);
-    }
-  }
-
-  // Step 6: If we still have empty fields, try unused candidates as fallback
-  const unused = candidates.filter((c) => !usedLines.has(c.line));
-  if (!result.first_name && !result.last_name && unused.length > 0) {
-    // Pick the first unused line that has at least some letters
-    const fallback = unused.find((c) => c.line.replace(/[^a-zA-ZÀ-ÿ]/g, '').length >= 2);
-    if (fallback) {
-      const parts = fallback.line.split(/\s+/);
-      result.first_name = parts[0] || '';
-      result.last_name = parts.slice(1).join(' ');
-      usedLines.add(fallback.line);
-    }
-  }
-  if (!result.company && unused.length > 0) {
-    const fallback = unused.find((c) => !usedLines.has(c.line) && c.type !== 'name');
-    if (fallback) {
-      result.company = fallback.line;
-      usedLines.add(fallback.line);
-    }
-  }
-
-  return result;
+    .map((l) =>
+      l
+        .replace(/[|]/g, 'l')
+        .replace(/[{}[\]]/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+    )
+    .filter((l) => {
+      if (l.length < 2) return false;
+      // Remove lines that are purely special characters / noise
+      const letters = l.replace(/[^a-zA-ZÀ-ÿ@0-9]/g, '');
+      if (letters.length < 2) return false;
+      return true;
+    });
 }
+
+/**
+ * Auto-detect email from a list of OCR lines.
+ */
+function findEmail(lines) {
+  for (const line of lines) {
+    const m = line.match(/([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/);
+    if (m) return m[1].toLowerCase();
+  }
+  return '';
+}
+
+// ── Field definitions for the interactive picker ──
+const FIELDS = [
+  { key: 'first_name', label: 'First Name', color: 'bg-rose-100 text-rose-800 border-rose-300' },
+  { key: 'last_name', label: 'Last Name', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+  { key: 'email', label: 'Email', color: 'bg-sky-100 text-sky-800 border-sky-300' },
+  { key: 'company', label: 'Company', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+  { key: 'role', label: 'Role', color: 'bg-violet-100 text-violet-800 border-violet-300' },
+];
 
 export default function BusinessCardScanner({ onResult, onClose }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const procCanvasRef = useRef(null);
   const streamRef = useRef(null);
   const [phase, setPhase] = useState('idle'); // idle | camera | processing | done
   const [progress, setProgress] = useState(0);
+  const [ocrLines, setOcrLines] = useState([]);
   const [rawText, setRawText] = useState('');
-  const [parsed, setParsed] = useState(null);
+  const [fields, setFields] = useState({ first_name: '', last_name: '', email: '', company: '', role: '' });
+  const [activeField, setActiveField] = useState('first_name');
   const [error, setError] = useState(null);
 
   const startCamera = useCallback(async () => {
@@ -274,6 +105,32 @@ export default function BusinessCardScanner({ onResult, onClose }) {
     }
   }, []);
 
+  const runOCR = useCallback(async (imageSource) => {
+    setPhase('processing');
+    setProgress(0);
+    try {
+      const { data } = await Tesseract.recognize(imageSource, 'eng+ita', {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            setProgress(Math.round(m.progress * 100));
+          }
+        },
+      });
+      setRawText(data.text);
+      const lines = extractLines(data.text);
+      setOcrLines(lines);
+
+      // Auto-fill email if found (that's reliable)
+      const email = findEmail(lines);
+      setFields({ first_name: '', last_name: '', email, company: '', role: '' });
+      setActiveField('first_name');
+      setPhase('done');
+    } catch (e) {
+      setError(`OCR failed: ${e.message}`);
+      setPhase('idle');
+    }
+  }, []);
+
   const captureAndProcess = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
@@ -283,60 +140,75 @@ export default function BusinessCardScanner({ onResult, onClose }) {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0);
     stopCamera();
-    setPhase('processing');
 
-    try {
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-      const { data } = await Tesseract.recognize(dataUrl, 'eng+ita', {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            setProgress(Math.round(m.progress * 100));
-          }
-        },
-      });
-      setRawText(data.text);
-      const result = parseCardText(data.text);
-      setParsed(result);
-      setPhase('done');
-    } catch (e) {
-      setError(`OCR failed: ${e.message}`);
-      setPhase('idle');
-    }
-  }, [stopCamera]);
+    // Preprocess for better OCR
+    const procCanvas = procCanvasRef.current;
+    procCanvas.width = canvas.width;
+    procCanvas.height = canvas.height;
+    const procCtx = procCanvas.getContext('2d');
+    procCtx.drawImage(canvas, 0, 0);
+    const processedUrl = preprocessImage(procCanvas);
+
+    await runOCR(processedUrl);
+  }, [stopCamera, runOCR]);
 
   const handleFileUpload = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setError(null);
-    setPhase('processing');
-    try {
-      const { data } = await Tesseract.recognize(file, 'eng+ita', {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            setProgress(Math.round(m.progress * 100));
-          }
-        },
-      });
-      setRawText(data.text);
-      const result = parseCardText(data.text);
-      setParsed(result);
-      setPhase('done');
-    } catch (e) {
-      setError(`OCR failed: ${e.message}`);
-      setPhase('idle');
+
+    // Load into canvas for preprocessing
+    const img = new Image();
+    img.onload = async () => {
+      const canvas = procCanvasRef.current;
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const processedUrl = preprocessImage(canvas);
+      await runOCR(processedUrl);
+    };
+    img.onerror = () => {
+      setError('Could not load image file.');
+    };
+    img.src = URL.createObjectURL(file);
+  }, [runOCR]);
+
+  const handleLineTap = (line) => {
+    if (!activeField) return;
+    // For first/last name, if the line has multiple words and
+    // activeField is first_name, split intelligently
+    if (activeField === 'first_name') {
+      const parts = line.split(/\s+/);
+      if (parts.length >= 2) {
+        setFields((f) => ({ ...f, first_name: parts[0], last_name: parts.slice(1).join(' ') }));
+        setActiveField('email'); // skip to next unfilled
+        return;
+      }
     }
-  }, []);
+    setFields((f) => ({ ...f, [activeField]: line }));
+    // Auto-advance to next empty field
+    const order = ['first_name', 'last_name', 'email', 'company', 'role'];
+    const currentIdx = order.indexOf(activeField);
+    for (let i = currentIdx + 1; i < order.length; i++) {
+      if (!fields[order[i]]) {
+        setActiveField(order[i]);
+        return;
+      }
+    }
+    // All filled, stay on current
+  };
 
   const handleConfirm = () => {
-    if (parsed) {
-      onResult(parsed);
-    }
+    onResult(fields);
   };
 
   const handleCancel = () => {
     stopCamera();
     onClose();
   };
+
+  const activeFieldDef = FIELDS.find((f) => f.key === activeField);
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -350,7 +222,7 @@ export default function BusinessCardScanner({ onResult, onClose }) {
           {phase === 'idle' && (
             <>
               <p className="text-sm text-gray-600">
-                Take a photo of a business card or upload an image to automatically extract contact details.
+                Take a photo of a business card or upload an image. You'll then assign each text line to the right field.
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
@@ -390,25 +262,98 @@ export default function BusinessCardScanner({ onResult, onClose }) {
             </div>
           )}
 
-          {phase === 'done' && parsed && (
+          {phase === 'done' && (
             <>
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-                Text extracted successfully. Review the fields below and click "Use these details".
+              {/* ── Instruction ── */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                Tap a <strong>field button</strong> below, then tap a <strong>text line</strong> to fill it in.
+                Email is auto-detected. You can also type directly in any field.
               </div>
 
-              <div className="space-y-2">
-                <PreviewField label="First Name" value={parsed.first_name} onChange={(v) => setParsed((p) => ({ ...p, first_name: v }))} />
-                <PreviewField label="Last Name" value={parsed.last_name} onChange={(v) => setParsed((p) => ({ ...p, last_name: v }))} />
-                <PreviewField label="Email" value={parsed.email} onChange={(v) => setParsed((p) => ({ ...p, email: v }))} />
-                <PreviewField label="Company" value={parsed.company} onChange={(v) => setParsed((p) => ({ ...p, company: v }))} />
-                <PreviewField label="Role" value={parsed.role} onChange={(v) => setParsed((p) => ({ ...p, role: v }))} />
+              {/* ── Field selector buttons ── */}
+              <div className="flex flex-wrap gap-2">
+                {FIELDS.map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setActiveField(f.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      activeField === f.key
+                        ? f.color + ' ring-2 ring-offset-1 ring-gray-400 shadow-sm'
+                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    {f.label}
+                    {fields[f.key] ? ' ✓' : ''}
+                  </button>
+                ))}
               </div>
 
+              {/* ── Detected text lines — tap to assign ── */}
+              <div>
+                <p className="text-xs text-gray-400 mb-2">
+                  Detected text — tap to assign to{' '}
+                  <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${activeFieldDef?.color || ''}`}>
+                    {activeFieldDef?.label || '...'}
+                  </span>
+                </p>
+                {ocrLines.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic">No text detected. Try retaking the photo with better lighting.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {ocrLines.map((line, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleLineTap(line)}
+                        className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-800
+                          hover:bg-gray-50 hover:border-gray-400 active:bg-gray-100 transition-colors"
+                      >
+                        {line}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Editable fields (always visible, also typeable) ── */}
+              <div className="space-y-2 border-t pt-3">
+                {FIELDS.map((f) => (
+                  <div key={f.key} className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActiveField(f.key)}
+                      className={`w-24 shrink-0 text-xs font-medium px-2 py-1.5 rounded border text-center transition-all ${
+                        activeField === f.key
+                          ? f.color + ' ring-1 ring-gray-400'
+                          : 'bg-gray-50 text-gray-500 border-gray-200'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                    <input
+                      type="text"
+                      value={fields[f.key]}
+                      onFocus={() => setActiveField(f.key)}
+                      onChange={(e) => setFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                      placeholder={f.label}
+                      className="flex-1 px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand"
+                    />
+                    {fields[f.key] && (
+                      <button
+                        onClick={() => setFields((prev) => ({ ...prev, [f.key]: '' }))}
+                        className="text-gray-300 hover:text-gray-500 text-lg leading-none px-1"
+                        title="Clear"
+                      >&times;</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* ── Raw text toggle ── */}
               <details className="text-xs">
                 <summary className="text-gray-400 cursor-pointer">Show raw OCR text</summary>
                 <pre className="mt-2 p-2 bg-gray-50 rounded text-gray-600 whitespace-pre-wrap">{rawText}</pre>
               </details>
 
+              {/* ── Actions ── */}
               <div className="flex gap-3">
                 <button
                   onClick={handleConfirm}
@@ -417,7 +362,12 @@ export default function BusinessCardScanner({ onResult, onClose }) {
                   Use these details
                 </button>
                 <button
-                  onClick={() => { setPhase('idle'); setParsed(null); setRawText(''); }}
+                  onClick={() => {
+                    setPhase('idle');
+                    setOcrLines([]);
+                    setRawText('');
+                    setFields({ first_name: '', last_name: '', email: '', company: '', role: '' });
+                  }}
                   className="px-4 py-2 bg-white border text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
                 >
                   Retry
@@ -432,21 +382,8 @@ export default function BusinessCardScanner({ onResult, onClose }) {
         </div>
 
         <canvas ref={canvasRef} className="hidden" />
+        <canvas ref={procCanvasRef} className="hidden" />
       </div>
-    </div>
-  );
-}
-
-function PreviewField({ label, value, onChange }) {
-  return (
-    <div className="flex items-center gap-2">
-      <label className="w-24 text-xs font-medium text-gray-500 shrink-0">{label}</label>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="flex-1 px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand"
-      />
     </div>
   );
 }
