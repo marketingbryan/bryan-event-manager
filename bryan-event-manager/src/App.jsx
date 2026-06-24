@@ -27,6 +27,12 @@ const API = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, action, ...extra }),
     }).then((r) => r.json()),
+  updateRsvp: (email, rsvp) =>
+    fetch('/api/update-rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, rsvp }),
+    }).then((r) => r.json()),
 };
 
 const PAGE_TITLES = {
@@ -116,6 +122,16 @@ export default function App() {
     }
   };
 
+  const handleUpdateRsvp = async (email, rsvp) => {
+    const res = await API.updateRsvp(email, rsvp);
+    if (res.ok) {
+      showToast('success', `${res.participant.first_name} ${res.participant.last_name} → ${rsvp}`);
+      await refresh();
+    } else {
+      showToast('error', res.error || 'Failed to update RSVP');
+    }
+  };
+
   const handleExport = () => {
     const data = participants.map((p) => ({
       'First Name': p.first_name,
@@ -191,6 +207,7 @@ export default function App() {
               onCheckin={handleCheckin}
               onUpload={handleUpload}
               onReset={handleReset}
+              onUpdateRsvp={handleUpdateRsvp}
               hasData={stats.total > 0}
             />
           )}

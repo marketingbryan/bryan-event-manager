@@ -1,15 +1,18 @@
 import { useMemo, useRef, useState } from 'react';
 import Papa from 'papaparse';
+import BusinessCardScanner from './BusinessCardScanner.jsx';
 
-export default function ParticipantsPage({ participants, loading, onCheckin, onUpload, onReset, hasData }) {
+export default function ParticipantsPage({ participants, loading, onCheckin, onUpload, onReset, onUpdateRsvp, hasData }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [busy, setBusy] = useState(null);
   const [uploadError, setUploadError] = useState(null);
   const [showManualForm, setShowManualForm] = useState(false);
+  const [showCardScanner, setShowCardScanner] = useState(false);
   const [manualForm, setManualForm] = useState({ first_name: '', last_name: '', email: '', company: '', role: '', rsvp: 'Invited' });
   const [manualError, setManualError] = useState(null);
   const [manualSaving, setManualSaving] = useState(false);
+  const [csvRsvp, setCsvRsvp] = useState('Invited');
   const fileRef = useRef(null);
 
   const filtered = useMemo(() => {
@@ -38,17 +41,20 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
       transformHeader: (h) => h.trim().toLowerCase(),
       complete: (results) => {
         const rows = results.data
-          .map((r) => ({
-            first_name: r.nome || r.first_name || r.firstname || r.name || '',
-            last_name: r.cognome || r.last_name || r.lastname || r.surname || '',
-            email: r.email || r.mail || r['e-mail'] || '',
-            company: r.company || r.azienda || r.organization || r.org || '',
-            role: r.role || r.ruolo || r.title || r.job_title || '',
-            rsvp: r.rsvp || r.stato || '',
-          }))
+          .map((r) => {
+            const rowRsvp = r.rsvp || r.stato || '';
+            return {
+              first_name: r.nome || r.first_name || r.firstname || r.name || '',
+              last_name: r.cognome || r.last_name || r.lastname || r.surname || '',
+              email: r.email || r.mail || r['e-mail'] || '',
+              company: r.company || r.azienda || r.organization || r.org || '',
+              role: r.role || r.ruolo || r.title || r.job_title || '',
+              rsvp: rowRsvp || csvRsvp, // Use per-row if present, else the dropdown value
+            };
+          })
           .filter((r) => r.email);
         if (rows.length === 0) {
-          setUploadError('No valid rows found. Expected columns: first_name, last_name, email (+ optional: company, role).');
+          setUploadError('No valid rows found. Expected columns: first_name, last_name, email (+ optional: company, role, rsvp).');
           return;
         }
         onUpload(rows);
@@ -61,7 +67,7 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
   const handleManualAdd = async (e) => {
     e.preventDefault();
     setManualError(null);
-    const { first_name, last_name, email, company, role } = manualForm;
+    const { first_name, last_name, email } = manualForm;
     if (!first_name.trim() && !last_name.trim()) {
       setManualError('Enter at least a first or last name');
       return;
@@ -89,6 +95,19 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
     }
   };
 
+  const handleCardResult = (data) => {
+    setManualForm((f) => ({
+      ...f,
+      first_name: data.first_name || f.first_name,
+      last_name: data.last_name || f.last_name,
+      email: data.email || f.email,
+      company: data.company || f.company,
+      role: data.role || f.role,
+    }));
+    setShowCardScanner(false);
+    setShowManualForm(true);
+  };
+
   const handleAction = async (email, action) => {
     setBusy(email);
     try {
@@ -106,7 +125,16 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
             <h2 className="text-base font-semibold text-gray-900">Upload Participants</h2>
             <p className="text-sm text-gray-500">CSV with columns: <code className="text-xs bg-gray-100 px-1 rounded">first_name</code>, <code className="text-xs bg-gray-100 px-1 rounded">last_name</code>, <code className="text-xs bg-gray-100 px-1 rounded">email</code>, <code className="text-xs bg-gray-100 px-1 rounded">company</code>, <code className="text-xs bg-gray-100 px-1 rounded">role</code></p>
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-center">
+            <select
+              value={csvRsvp}
+              onChange={(e) => setCsvRsvp(e.target.value)}
+              className="px-3 py-2 border rounded-lg bg-white text-sm"
+              title="Default RSVP status for CSV rows without an rsvp column"
+            >
+              <option value="Invited">Import as: Invited</option>
+              <option value="Registered">Import as: Registered</option>
+            </select>
             <label className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover cursor-pointer">
               Choose CSV
               <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
@@ -116,6 +144,13 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
               className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
             >
               {showManualForm ? 'Close' : '+ Add Manually'}
+            </button>
+            <button
+              onClick={() => setShowCardScanner(true)}
+              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
+              title="Scan a business card to pre-fill details"
+            >
+              Scan Card
             </button>
             {hasData && (
               <button
@@ -261,13 +296,17 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                     <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{p.company || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{p.role || '—'}</td>
                     <td className="px-4 py-3 hidden md:table-cell">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        p.rsvp === 'Registered'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}>
+                      <button
+                        onClick={() => onUpdateRsvp(p.email, p.rsvp === 'Registered' ? 'Invited' : 'Registered')}
+                        title={`Click to change to ${p.rsvp === 'Registered' ? 'Invited' : 'Registered'}`}
+                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium cursor-pointer transition-colors ${
+                          p.rsvp === 'Registered'
+                            ? 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
                         {p.rsvp || 'Invited'}
-                      </span>
+                      </button>
                     </td>
                     <td className="px-4 py-3">
                       {p.checked_in ? (
@@ -306,6 +345,13 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
           </table>
         </div>
       </div>
+
+      {showCardScanner && (
+        <BusinessCardScanner
+          onResult={handleCardResult}
+          onClose={() => setShowCardScanner(false)}
+        />
+      )}
     </div>
   );
 }

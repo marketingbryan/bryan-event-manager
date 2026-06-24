@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import BusinessCardScanner from './BusinessCardScanner.jsx';
 
 function extractEmail(text) {
   if (!text) return null;
@@ -28,6 +29,7 @@ export default function ScannerPanel({ onCheckin }) {
   const [history, setHistory] = useState([]);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
+  const [showCardScanner, setShowCardScanner] = useState(false);
 
   useEffect(() => {
     return () => { stopScanner(); };
@@ -165,10 +167,18 @@ export default function ScannerPanel({ onCheckin }) {
         </div>
 
         <div className="bg-white rounded-xl border p-4 sm:p-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-3">Manual Check-in</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold text-gray-900">Manual Check-in</h2>
+            <button
+              onClick={() => setShowCardScanner(true)}
+              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50"
+            >
+              Scan Card
+            </button>
+          </div>
           <p className="text-sm text-gray-500 mb-4">
-            Enter participant details below. If the email already exists, they'll be checked in.
-            If not, they'll be added and checked in automatically.
+            Enter participant details below or scan a business card. If the email already exists,
+            they'll be checked in. If not, they'll be added and checked in automatically.
           </p>
           <form onSubmit={handleManualSubmit}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -284,6 +294,23 @@ export default function ScannerPanel({ onCheckin }) {
           </ul>
         )}
       </div>
+
+      {showCardScanner && (
+        <BusinessCardScanner
+          onResult={(data) => {
+            setForm((f) => ({
+              ...f,
+              first_name: data.first_name || f.first_name,
+              last_name: data.last_name || f.last_name,
+              email: data.email || f.email,
+              company: data.company || f.company,
+              role: data.role || f.role,
+            }));
+            setShowCardScanner(false);
+          }}
+          onClose={() => setShowCardScanner(false)}
+        />
+      )}
     </div>
   );
 }
