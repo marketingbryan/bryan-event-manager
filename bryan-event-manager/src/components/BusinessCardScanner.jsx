@@ -1,33 +1,6 @@
 import { useRef, useState, useCallback } from 'react';
-import Tesseract from 'tesseract.js';
 
-/**
- * Extract usable text lines from raw OCR output.
- */
-function extractLines(raw) {
-  return raw
-    .split('\n')
-    .map((l) => l.replace(/\s{2,}/g, ' ').trim())
-    .filter((l) => {
-      if (l.length < 2) return false;
-      // Keep lines that have at least some real letters/digits
-      const useful = l.replace(/[^a-zA-ZÀ-ÿ@0-9]/g, '');
-      return useful.length >= 2;
-    });
-}
-
-/**
- * Auto-detect email from a list of OCR lines.
- */
-function findEmail(lines) {
-  for (const line of lines) {
-    const m = line.match(/([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/);
-    if (m) return m[1].toLowerCase();
-  }
-  return '';
-}
-
-// Field definitions for the interactive picker
+// Field definitions
 const FIELDS = [
   { key: 'first_name', label: 'First Name', color: 'bg-rose-100 text-rose-700 border-rose-300', ring: 'ring-rose-400' },
   { key: 'last_name', label: 'Last Name', color: 'bg-amber-100 text-amber-700 border-amber-300', ring: 'ring-amber-400' },
@@ -36,18 +9,30 @@ const FIELDS = [
   { key: 'role', label: 'Role', color: 'bg-violet-100 text-violet-700 border-violet-300', ring: 'ring-violet-400' },
 ];
 
+/**
+ * Convert a file or canvas to a base64 data URL.
+ */
+function canvasToDataUrl(canvas) {
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function BusinessCardScanner({ onResult, onClose }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const [phase, setPhase] = useState('idle'); // idle | camera | processing | done
-  const [progress, setProgress] = useState(0);
-  const [photoUrl, setPhotoUrl] = useState(null); // data URL of the captured/uploaded photo
-  const [ocrLines, setOcrLines] = useState([]);
+  const [photoUrl, setPhotoUrl] = useState(null);
   const [fields, setFields] = useState({ first_name: '', last_name: '', email: '', company: '', role: '' });
-  const [activeField, setActiveField] = useState('first_name');
   const [error, setError] = useState(null);
-  const [showOcrLines, setShowOcrLines] = useState(false);
 
   const startCamera = useCallback(async () => {
     setError(null);
@@ -74,28 +59,26 @@ export default function BusinessCardScanner({ onResult, onClose }) {
     }
   }, []);
 
-  const runOCR = useCallback(async (imageSource) => {
+  const analyzeImage = useCallback(async (dataUrl) => {
     setPhase('processing');
-    setProgress(0);
+    setError(null);
     try {
-      const { data } = await Tesseract.recognize(imageSource, 'eng+ita', {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            setProgress(Math.round(m.progress * 100));
-          }
-        },
+      const res = await fetch('/api/scan-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl }),
       });
-      const lines = extractLines(data.text);
-      setOcrLines(lines);
-
-      // Auto-fill email if found
-      const email = findEmail(lines);
-      setFields({ first_name: '', last_name: '', email, company: '', role: '' });
-      setActiveField('first_name');
-      setPhase('done');
+      const data = await res.json();
+      if (data.ok && data.fields) {
+        setFields(data.fields);
+        setPhase('done');
+      } else {
+        setError(data.error || 'Failed to analyze image');
+        setPhase('done');
+      }
     } catch (e) {
-      setError(`OCR failed: ${e.message}`);
-      setPhase('idle');
+      setError(`Network error: ${e.message}`);
+      setPhase('done');
     }
   }, []);
 
@@ -109,47 +92,23 @@ export default function BusinessCardScanner({ onResult, onClose }) {
     ctx.drawImage(video, 0, 0);
     stopCamera();
 
-    // Save original photo for display (no preprocessing — send raw to Tesseract)
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const dataUrl = canvasToDataUrl(canvas);
     setPhotoUrl(dataUrl);
-    await runOCR(dataUrl);
-  }, [stopCamera, runOCR]);
+    await analyzeImage(dataUrl);
+  }, [stopCamera, analyzeImage]);
 
   const handleFileUpload = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setError(null);
-
-    // Show the uploaded image and send it straight to Tesseract
-    const url = URL.createObjectURL(file);
-    setPhotoUrl(url);
-    await runOCR(file);
-  }, [runOCR]);
-
-  const handleLineTap = (line) => {
-    if (!activeField) return;
-    // If tapping a line while "first_name" is active and the line has 2+ words, auto-split
-    if (activeField === 'first_name') {
-      const parts = line.split(/\s+/);
-      if (parts.length >= 2) {
-        setFields((f) => ({ ...f, first_name: parts[0], last_name: parts.slice(1).join(' ') }));
-        // Advance to next empty field after last_name
-        const nextEmpty = ['email', 'company', 'role'].find((k) => !fields[k] && !(k === 'email' && findEmail(ocrLines)));
-        setActiveField(nextEmpty || 'company');
-        return;
-      }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setPhotoUrl(dataUrl);
+      await analyzeImage(dataUrl);
+    } catch (err) {
+      setError('Could not read file');
     }
-    setFields((f) => ({ ...f, [activeField]: line }));
-    // Auto-advance to next empty field
-    const order = ['first_name', 'last_name', 'email', 'company', 'role'];
-    const currentIdx = order.indexOf(activeField);
-    for (let i = currentIdx + 1; i < order.length; i++) {
-      if (!fields[order[i]]) {
-        setActiveField(order[i]);
-        return;
-      }
-    }
-  };
+  }, [analyzeImage]);
 
   const handleConfirm = () => {
     onResult(fields);
@@ -162,13 +121,10 @@ export default function BusinessCardScanner({ onResult, onClose }) {
 
   const handleReset = () => {
     setPhase('idle');
-    setOcrLines([]);
     setPhotoUrl(null);
     setFields({ first_name: '', last_name: '', email: '', company: '', role: '' });
-    setShowOcrLines(false);
+    setError(null);
   };
-
-  const activeFieldDef = FIELDS.find((f) => f.key === activeField);
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -179,11 +135,11 @@ export default function BusinessCardScanner({ onResult, onClose }) {
         </div>
 
         <div className="p-4 space-y-4">
-          {/* ── IDLE: choose capture method ── */}
+          {/* ── IDLE ── */}
           {phase === 'idle' && (
             <>
               <p className="text-sm text-gray-600">
-                Take a photo of a business card or upload an image to extract contact details.
+                Take a photo of a business card or upload an image to automatically extract contact details.
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
@@ -200,7 +156,7 @@ export default function BusinessCardScanner({ onResult, onClose }) {
             </>
           )}
 
-          {/* ── CAMERA: live viewfinder ── */}
+          {/* ── CAMERA ── */}
           {phase === 'camera' && (
             <>
               <div className="relative bg-black rounded-lg overflow-hidden">
@@ -216,47 +172,50 @@ export default function BusinessCardScanner({ onResult, onClose }) {
             </>
           )}
 
-          {/* ── PROCESSING: spinner ── */}
+          {/* ── PROCESSING ── */}
           {phase === 'processing' && (
             <div className="py-8 text-center">
-              <div className="w-12 h-12 mx-auto mb-4 border-4 border-gray-200 border-t-brand rounded-full animate-spin" />
-              <p className="text-sm text-gray-600">Reading text from image...</p>
-              <p className="text-xs text-gray-400 mt-1">{progress}%</p>
+              {photoUrl && (
+                <div className="rounded-lg overflow-hidden border bg-gray-100 mb-4">
+                  <img src={photoUrl} alt="Business card" className="w-full object-contain max-h-40" />
+                </div>
+              )}
+              <div className="w-10 h-10 mx-auto mb-3 border-4 border-gray-200 border-t-brand rounded-full animate-spin" />
+              <p className="text-sm text-gray-600">Analyzing business card...</p>
+              <p className="text-xs text-gray-400 mt-1">AI is reading the card</p>
             </div>
           )}
 
-          {/* ── DONE: photo + fields ── */}
+          {/* ── DONE ── */}
           {phase === 'done' && (
             <>
-              {/* Photo preview — the user reads from this */}
+              {/* Photo preview */}
               {photoUrl && (
                 <div className="rounded-lg overflow-hidden border bg-gray-100">
-                  <img src={photoUrl} alt="Business card" className="w-full object-contain max-h-48" />
+                  <img src={photoUrl} alt="Business card" className="w-full object-contain max-h-44" />
                 </div>
               )}
 
-              <p className="text-xs text-gray-500">
-                Read the card above and fill in the fields below. You can type directly or tap a detected text line to fill a field.
-              </p>
+              {error && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</div>
+              )}
 
-              {/* ── Editable fields ── */}
+              {!error && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+                  Details extracted. Review and edit if needed, then click "Use these details".
+                </div>
+              )}
+
+              {/* Editable fields */}
               <div className="space-y-2">
                 {FIELDS.map((f) => (
                   <div key={f.key} className="flex items-center gap-2">
-                    <button
-                      onClick={() => setActiveField(f.key)}
-                      className={`w-24 shrink-0 text-xs font-medium px-2 py-1.5 rounded border text-center transition-all ${
-                        activeField === f.key
-                          ? f.color + ' ring-2 ring-offset-1 ' + f.ring
-                          : 'bg-gray-50 text-gray-500 border-gray-200'
-                      }`}
-                    >
+                    <span className={`w-24 shrink-0 text-xs font-medium px-2 py-1.5 rounded border text-center ${f.color}`}>
                       {f.label}
-                    </button>
+                    </span>
                     <input
                       type="text"
                       value={fields[f.key]}
-                      onFocus={() => setActiveField(f.key)}
                       onChange={(e) => setFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
                       placeholder={f.label}
                       className="flex-1 px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand"
@@ -272,38 +231,7 @@ export default function BusinessCardScanner({ onResult, onClose }) {
                 ))}
               </div>
 
-              {/* ── OCR text lines (collapsible) ── */}
-              {ocrLines.length > 0 && (
-                <div>
-                  <button
-                    onClick={() => setShowOcrLines((v) => !v)}
-                    className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
-                  >
-                    <span>{showOcrLines ? '▾' : '▸'}</span>
-                    {showOcrLines ? 'Hide' : 'Show'} detected text ({ocrLines.length} lines)
-                    {' — '}tap to fill{' '}
-                    <span className={`inline px-1 py-0.5 rounded text-xs font-medium ${activeFieldDef?.color || ''}`}>
-                      {activeFieldDef?.label || ''}
-                    </span>
-                  </button>
-                  {showOcrLines && (
-                    <div className="mt-2 space-y-1 max-h-36 overflow-y-auto">
-                      {ocrLines.map((line, i) => (
-                        <button
-                          key={i}
-                          onClick={() => handleLineTap(line)}
-                          className="w-full text-left px-3 py-1.5 rounded border border-gray-200 text-sm text-gray-700
-                            hover:bg-gray-50 hover:border-gray-400 active:bg-gray-100 transition-colors"
-                        >
-                          {line}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── Actions ── */}
+              {/* Actions */}
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={handleConfirm}
@@ -321,7 +249,7 @@ export default function BusinessCardScanner({ onResult, onClose }) {
             </>
           )}
 
-          {error && (
+          {phase === 'idle' && error && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</div>
           )}
         </div>
