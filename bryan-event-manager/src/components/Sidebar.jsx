@@ -5,7 +5,9 @@ const ITEMS = [
   { id: 'export', label: 'Export', icon: FileIcon },
 ];
 
-export default function Sidebar({ current, onNavigate, open, onClose }) {
+export default function Sidebar({ current, onNavigate, open, onClose, user, onLogout }) {
+  const isSuperAdmin = user?.role === 'superadmin';
+
   return (
     <>
       {open && (
@@ -15,14 +17,14 @@ export default function Sidebar({ current, onNavigate, open, onClose }) {
         />
       )}
       <aside
-        className={`fixed top-0 left-0 h-screen w-64 bg-sidebar text-gray-200 z-40 transform transition-transform lg:translate-x-0 ${
+        className={`fixed top-0 left-0 h-screen w-64 bg-sidebar text-gray-200 z-40 transform transition-transform lg:translate-x-0 flex flex-col ${
           open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
         <div className="p-6">
           <h1 className="text-xl font-bold text-white">Event Manager</h1>
         </div>
-        <nav className="px-3 space-y-1">
+        <nav className="px-3 space-y-1 flex-1">
           {ITEMS.map((item) => {
             const Icon = item.icon;
             const active = current === item.id;
@@ -41,7 +43,35 @@ export default function Sidebar({ current, onNavigate, open, onClose }) {
               </button>
             );
           })}
+
+          {isSuperAdmin && (
+            <button
+              onClick={() => onNavigate('admin')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                current === 'admin'
+                  ? 'bg-white/10 text-white'
+                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <ShieldIcon />
+              <span>Admin</span>
+            </button>
+          )}
         </nav>
+
+        {/* Bottom section: user info + logout */}
+        <div className="p-4 border-t border-white/10">
+          <div className="text-xs text-gray-400 truncate mb-2" title={user?.email}>
+            {user?.email}
+          </div>
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-colors"
+          >
+            <LogoutIcon />
+            <span>Logout</span>
+          </button>
+        </div>
       </aside>
     </>
   );
@@ -84,6 +114,22 @@ function FileIcon() {
       <polyline points="14 2 14 8 20 8" />
       <line x1="8" y1="13" x2="16" y2="13" />
       <line x1="8" y1="17" x2="16" y2="17" />
+    </svg>
+  );
+}
+function ShieldIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+function LogoutIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
     </svg>
   );
 }

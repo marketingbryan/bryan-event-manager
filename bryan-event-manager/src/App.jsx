@@ -6,70 +6,118 @@ import ParticipantsPage from './components/ParticipantsPage.jsx';
 import ScannerPanel from './components/ScannerPanel.jsx';
 import ExportPage from './components/ExportPage.jsx';
 import Toast from './components/Toast.jsx';
-
-const API = {
-  list: () => fetch('/api/participants').then((r) => r.json()),
-  upload: (participants) =>
-    fetch('/api/participants', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ participants }),
-    }).then((r) => r.json()),
-  reset: () =>
-    fetch('/api/participants', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirm: true }),
-    }).then((r) => r.json()),
-  checkin: (email, action, extra = {}) =>
-    fetch('/api/checkin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, action, ...extra }),
-    }).then((r) => r.json()),
-  updateRsvp: (email, rsvp) =>
-    fetch('/api/update-rsvp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, rsvp }),
-    }).then((r) => r.json()),
-};
+import LoginPage from './components/LoginPage.jsx';
+import AdminPage from './components/AdminPage.jsx';
 
 const PAGE_TITLES = {
   dashboard: 'Event Dashboard',
   participants: 'Participants',
   scanner: 'QR Scanner',
   export: 'Export',
+  admin: 'Admin',
 };
 
 export default function App() {
+  /* ─── Auth state ─── */
+  const [sessionToken, setSessionToken] = useState(() => localStorage.getItem('sessionToken'));
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('user')); } catch { return null; }
+  });
+
+  /* ─── App state ─── */
   const [page, setPage] = useState('dashboard');
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  /* ─── authFetch: wrapper that adds Bearer token to every request ─── */
+  const authFetch = useCallback(async (url, opts = {}) => {
+    const headers = { ...(opts.headers || {}) };
+    if (sessionToken) {
+      headers['Authorization'] = `Bearer ${sessionToken}`;
+    }
+    const res = await fetch(url, { ...opts, headers });
+    // If the server says 401, the session is expired / invalid
+    if (res.status === 401) {
+      setSessionToken(null);
+      setUser(null);
+      localStorage.removeItem('sessionToken');
+      localStorage.removeItem('user');
+    }
+    return res;
+  }, [sessionToken]);
+
+  /* ─── Login / Logout ─── */
+  const handleLogin = useCallback((token, userData) => {
+    setSessionToken(token);
+    setUser(userData);
+    localStorage.setItem('sessionToken', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await authFetch('/api/auth/logout', { method: 'POST' });
+    } catch (_) {}
+    setSessionToken(null);
+    setUser(null);
+    localStorage.removeItem('sessionToken');
+    localStorage.removeItem('user');
+    setPage('dashboard');
+    setParticipants([]);
+  }, [authFetch]);
+
+  /* ─── Validate session on mount ─── */
+  useEffect(() => {
+    if (!sessionToken) { setLoading(false); return; }
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { 'Authorization': `Bearer ${sessionToken}` },
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setUser(data.user);
+          localStorage.setItem('user', JSON.stringify(data.user));
+        } else {
+          // Token invalid
+          setSessionToken(null);
+          setUser(null);
+          localStorage.removeItem('sessionToken');
+          localStorage.removeItem('user');
+        }
+      } catch (_) {}
+    })();
+  }, []); // run once on mount
+
+  /* ─── Toast helper ─── */
   const showToast = useCallback((type, message) => {
     setToast({ type, message, id: Date.now() });
     setTimeout(() => setToast(null), 3500);
   }, []);
 
+  /* ─── Data fetching (uses authFetch) ─── */
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await API.list();
+      const res = await authFetch('/api/participants');
+      if (res.status === 401) return;
+      const data = await res.json();
       setParticipants(data.participants || []);
     } catch (e) {
       showToast('error', 'Failed to load participants');
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [authFetch, showToast]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (sessionToken) refresh();
+    else setLoading(false);
+  }, [sessionToken, refresh]);
 
+  /* ─── Stats ─── */
   const stats = useMemo(() => {
     const total = participants.length;
     const checked = participants.filter((p) => p.checked_in).length;
@@ -78,14 +126,21 @@ export default function App() {
     return { total, checked, missing, pct };
   }, [participants]);
 
+  /* ─── Handlers ─── */
   const handleUpload = async (rows) => {
-    const res = await API.upload(rows);
-    if (res.error) {
-      showToast('error', res.error);
+    const res = await authFetch('/api/participants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participants: rows }),
+    });
+    if (res.status === 401) return;
+    const data = await res.json();
+    if (data.error) {
+      showToast('error', data.error);
     } else {
       showToast(
         'success',
-        `Uploaded ${res.inserted} participant${res.inserted !== 1 ? 's' : ''}${res.skipped ? ` (${res.skipped} duplicate${res.skipped !== 1 ? 's' : ''})` : ''}`
+        `Uploaded ${data.inserted} participant${data.inserted !== 1 ? 's' : ''}${data.skipped ? ` (${data.skipped} duplicate${data.skipped !== 1 ? 's' : ''})` : ''}`
       );
       await refresh();
       setPage('participants');
@@ -94,41 +149,59 @@ export default function App() {
 
   const handleReset = async () => {
     if (!confirm('Are you sure you want to delete all participants? This action cannot be undone.')) return;
-    const res = await API.reset();
-    if (res.ok) {
+    const res = await authFetch('/api/participants', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    });
+    if (res.status === 401) return;
+    const data = await res.json();
+    if (data.ok) {
       showToast('success', 'Participant list cleared');
       await refresh();
     } else {
-      showToast('error', res.error || 'Error');
+      showToast('error', data.error || 'Error');
     }
   };
 
   const handleCheckin = async (email, action, extra = {}) => {
-    const res = await API.checkin(email, action, extra);
-    if (res.ok) {
-      if (res.alreadyCheckedIn) {
-        showToast('info', `${res.participant.first_name} ${res.participant.last_name} is already checked in`);
+    const res = await authFetch('/api/checkin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, action, ...extra }),
+    });
+    if (res.status === 401) return;
+    const data = await res.json();
+    if (data.ok) {
+      if (data.alreadyCheckedIn) {
+        showToast('info', `${data.participant.first_name} ${data.participant.last_name} is already checked in`);
       } else if (action === 'check-out') {
-        showToast('info', `Check-in undone for ${res.participant.first_name} ${res.participant.last_name}`);
+        showToast('info', `Check-in undone for ${data.participant.first_name} ${data.participant.last_name}`);
       } else {
-        const label = res.created ? 'Added & checked in' : 'Checked in';
-        showToast('success', `${label}: ${res.participant.first_name} ${res.participant.last_name}`);
+        const label = data.created ? 'Added & checked in' : 'Checked in';
+        showToast('success', `${label}: ${data.participant.first_name} ${data.participant.last_name}`);
       }
       await refresh();
-      return res;
+      return data;
     } else {
-      showToast('error', res.error || 'Participant not found');
-      return res;
+      showToast('error', data.error || 'Participant not found');
+      return data;
     }
   };
 
   const handleUpdateRsvp = async (email, rsvp) => {
-    const res = await API.updateRsvp(email, rsvp);
-    if (res.ok) {
-      showToast('success', `${res.participant.first_name} ${res.participant.last_name} → ${rsvp}`);
+    const res = await authFetch('/api/update-rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, rsvp }),
+    });
+    if (res.status === 401) return;
+    const data = await res.json();
+    if (data.ok) {
+      showToast('success', `${data.participant.first_name} ${data.participant.last_name} → ${rsvp}`);
       await refresh();
     } else {
-      showToast('error', res.error || 'Failed to update RSVP');
+      showToast('error', data.error || 'Failed to update RSVP');
     }
   };
 
@@ -137,6 +210,7 @@ export default function App() {
       'First Name': p.first_name,
       'Last Name': p.last_name,
       Email: p.email,
+      Phone: p.phone || '',
       Company: p.company || '',
       Role: p.role || '',
       RSVP: p.rsvp || 'Invited',
@@ -144,7 +218,7 @@ export default function App() {
       'Check-in Time': p.checked_in_at ? new Date(p.checked_in_at).toLocaleString('en-GB') : '',
     }));
     const csv = Papa.unparse(data);
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     const today = new Date().toISOString().slice(0, 10);
@@ -157,6 +231,12 @@ export default function App() {
     showToast('success', 'Export completed');
   };
 
+  /* ─── Not logged in → show login ─── */
+  if (!sessionToken || !user) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
+  /* ─── Logged in → full app ─── */
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar
@@ -167,6 +247,8 @@ export default function App() {
         }}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        user={user}
+        onLogout={handleLogout}
       />
 
       <div className="flex-1 flex flex-col min-w-0 lg:ml-64">
@@ -182,9 +264,9 @@ export default function App() {
                   <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
                 </svg>
               </button>
-              <h1 className="text-lg sm:text-xl font-semibold text-gray-900">{PAGE_TITLES[page]}</h1>
+              <h1 className="text-lg sm:text-xl font-semibold text-gray-900">{PAGE_TITLES[page] || 'Event Manager'}</h1>
             </div>
-            {page !== 'scanner' && (
+            {page !== 'scanner' && page !== 'admin' && (
               <button
                 onClick={handleExport}
                 disabled={participants.length === 0}
@@ -209,13 +291,20 @@ export default function App() {
               onReset={handleReset}
               onUpdateRsvp={handleUpdateRsvp}
               hasData={stats.total > 0}
+              authFetch={authFetch}
             />
           )}
           {page === 'scanner' && (
-            <ScannerPanel onCheckin={(email, extra) => handleCheckin(email, 'check-in', extra)} />
+            <ScannerPanel
+              onCheckin={(email, extra) => handleCheckin(email, 'check-in', extra)}
+              authFetch={authFetch}
+            />
           )}
           {page === 'export' && (
             <ExportPage stats={stats} onExport={handleExport} disabled={participants.length === 0} />
+          )}
+          {page === 'admin' && user.role === 'superadmin' && (
+            <AdminPage authFetch={authFetch} />
           )}
         </main>
       </div>

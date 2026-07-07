@@ -1,21 +1,23 @@
 // /api/participants
 // GET    -> list all participants
-// POST   -> body: { participants: [{first_name, last_name, email, company?, role?, rsvp?}, ...] }
+// POST   -> body: { participants: [{first_name, last_name, email, company?, role?, phone?, rsvp?}, ...] }
 // DELETE -> body: { confirm: true } to clear all participants (reset event)
 import { query, ensureSchema, setCors, normalizeEmail } from './_db.js';
+import { requireAuth } from './_auth.js';
 
 export default async function handler(req, res) {
   setCors(res);
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
   try {
     await ensureSchema();
 
     if (req.method === 'GET') {
       const { rows } = await query(
-        `SELECT id, first_name, last_name, email, company, role, rsvp, checked_in, checked_in_at, created_at
+        `SELECT id, first_name, last_name, email, company, role, phone, rsvp, checked_in, checked_in_at, created_at
          FROM participants
          ORDER BY last_name ASC, first_name ASC`
       );
@@ -39,6 +41,7 @@ export default async function handler(req, res) {
         const email = normalizeEmail(p.email);
         const company = String(p.company || '').trim();
         const role = String(p.role || '').trim();
+        const phone = String(p.phone || '').trim();
         const rsvpRaw = String(p.rsvp || '').trim();
         const rsvp = rsvpRaw === 'Registered' ? 'Registered' : 'Invited';
 
@@ -52,11 +55,11 @@ export default async function handler(req, res) {
         }
 
         const result = await query(
-          `INSERT INTO participants (first_name, last_name, email, company, role, rsvp)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO participants (first_name, last_name, email, company, role, phone, rsvp)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (email) DO NOTHING
            RETURNING id`,
-          [first, last, email, company, role, rsvp]
+          [first, last, email, company, role, phone, rsvp]
         );
         if (result.rowCount > 0) inserted++;
         else skipped++;

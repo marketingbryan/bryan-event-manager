@@ -1,17 +1,14 @@
 import { useRef, useState, useCallback } from 'react';
 
-// Field definitions
 const FIELDS = [
-  { key: 'first_name', label: 'First Name', color: 'bg-rose-100 text-rose-700 border-rose-300', ring: 'ring-rose-400' },
-  { key: 'last_name', label: 'Last Name', color: 'bg-amber-100 text-amber-700 border-amber-300', ring: 'ring-amber-400' },
-  { key: 'email', label: 'Email', color: 'bg-sky-100 text-sky-700 border-sky-300', ring: 'ring-sky-400' },
-  { key: 'company', label: 'Company', color: 'bg-emerald-100 text-emerald-700 border-emerald-300', ring: 'ring-emerald-400' },
-  { key: 'role', label: 'Role', color: 'bg-violet-100 text-violet-700 border-violet-300', ring: 'ring-violet-400' },
+  { key: 'first_name', label: 'First Name', color: 'bg-rose-100 text-rose-700 border-rose-300' },
+  { key: 'last_name', label: 'Last Name', color: 'bg-amber-100 text-amber-700 border-amber-300' },
+  { key: 'email', label: 'Email', color: 'bg-sky-100 text-sky-700 border-sky-300' },
+  { key: 'phone', label: 'Phone', color: 'bg-teal-100 text-teal-700 border-teal-300' },
+  { key: 'company', label: 'Company', color: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
+  { key: 'role', label: 'Role', color: 'bg-violet-100 text-violet-700 border-violet-300' },
 ];
 
-/**
- * Convert a file or canvas to a base64 data URL.
- */
 function canvasToDataUrl(canvas) {
   return canvas.toDataURL('image/jpeg', 0.85);
 }
@@ -25,13 +22,13 @@ function fileToDataUrl(file) {
   });
 }
 
-export default function BusinessCardScanner({ onResult, onClose }) {
+export default function BusinessCardScanner({ onResult, onClose, authFetch }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
-  const [phase, setPhase] = useState('idle'); // idle | camera | processing | done
+  const [phase, setPhase] = useState('idle');
   const [photoUrl, setPhotoUrl] = useState(null);
-  const [fields, setFields] = useState({ first_name: '', last_name: '', email: '', company: '', role: '' });
+  const [fields, setFields] = useState({ first_name: '', last_name: '', email: '', phone: '', company: '', role: '' });
   const [error, setError] = useState(null);
 
   const startCamera = useCallback(async () => {
@@ -39,7 +36,7 @@ export default function BusinessCardScanner({ onResult, onClose }) {
     setPhase('camera');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { facingMode: 'environment', width: { ideal: 1080 }, height: { ideal: 1080 } },
       });
       streamRef.current = stream;
       if (videoRef.current) {
@@ -63,7 +60,8 @@ export default function BusinessCardScanner({ onResult, onClose }) {
     setPhase('processing');
     setError(null);
     try {
-      const res = await fetch('/api/scan-card', {
+      const fetchFn = authFetch || fetch;
+      const res = await fetchFn('/api/scan-card', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: dataUrl }),
@@ -80,16 +78,20 @@ export default function BusinessCardScanner({ onResult, onClose }) {
       setError(`Network error: ${e.message}`);
       setPhase('done');
     }
-  }, []);
+  }, [authFetch]);
 
   const captureAndProcess = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // Square crop from center
+    const size = Math.min(video.videoWidth, video.videoHeight);
+    canvas.width = size;
+    canvas.height = size;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
+    const sx = (video.videoWidth - size) / 2;
+    const sy = (video.videoHeight - size) / 2;
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
     stopCamera();
 
     const dataUrl = canvasToDataUrl(canvas);
@@ -110,19 +112,12 @@ export default function BusinessCardScanner({ onResult, onClose }) {
     }
   }, [analyzeImage]);
 
-  const handleConfirm = () => {
-    onResult(fields);
-  };
-
-  const handleCancel = () => {
-    stopCamera();
-    onClose();
-  };
-
+  const handleConfirm = () => onResult(fields);
+  const handleCancel = () => { stopCamera(); onClose(); };
   const handleReset = () => {
     setPhase('idle');
     setPhotoUrl(null);
-    setFields({ first_name: '', last_name: '', email: '', company: '', role: '' });
+    setFields({ first_name: '', last_name: '', email: '', phone: '', company: '', role: '' });
     setError(null);
   };
 
@@ -135,17 +130,13 @@ export default function BusinessCardScanner({ onResult, onClose }) {
         </div>
 
         <div className="p-4 space-y-4">
-          {/* ── IDLE ── */}
           {phase === 'idle' && (
             <>
               <p className="text-sm text-gray-600">
                 Take a photo of a business card or upload an image to automatically extract contact details.
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  onClick={startCamera}
-                  className="flex-1 px-4 py-3 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover flex items-center justify-center gap-2"
-                >
+                <button onClick={startCamera} className="flex-1 px-4 py-3 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover flex items-center justify-center gap-2">
                   <CameraIcon /> Use Camera
                 </button>
                 <label className="flex-1 px-4 py-3 bg-white border text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 cursor-pointer flex items-center justify-center gap-2">
@@ -156,57 +147,49 @@ export default function BusinessCardScanner({ onResult, onClose }) {
             </>
           )}
 
-          {/* ── CAMERA ── */}
           {phase === 'camera' && (
             <>
-              <div className="relative bg-black rounded-lg overflow-hidden">
-                <video ref={videoRef} className="w-full" autoPlay playsInline muted />
+              <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ maxWidth: 400 }}>
+                <div className="aspect-square overflow-hidden">
+                  <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+                </div>
                 <div className="absolute inset-0 border-2 border-white/30 rounded-lg pointer-events-none" />
               </div>
-              <button
-                onClick={captureAndProcess}
-                className="w-full px-4 py-3 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover"
-              >
+              <button onClick={captureAndProcess} className="w-full px-4 py-3 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover">
                 Capture Photo
               </button>
             </>
           )}
 
-          {/* ── PROCESSING ── */}
           {phase === 'processing' && (
             <div className="py-8 text-center">
               {photoUrl && (
-                <div className="rounded-lg overflow-hidden border bg-gray-100 mb-4">
-                  <img src={photoUrl} alt="Business card" className="w-full object-contain max-h-40" />
+                <div className="rounded-lg overflow-hidden border bg-gray-100 mb-4 mx-auto" style={{ maxWidth: 300 }}>
+                  <img src={photoUrl} alt="Business card" className="w-full object-contain" />
                 </div>
               )}
               <div className="w-10 h-10 mx-auto mb-3 border-4 border-gray-200 border-t-brand rounded-full animate-spin" />
               <p className="text-sm text-gray-600">Analyzing business card...</p>
-              <p className="text-xs text-gray-400 mt-1">AI is reading the card</p>
             </div>
           )}
 
-          {/* ── DONE ── */}
           {phase === 'done' && (
             <>
-              {/* Photo preview */}
               {photoUrl && (
-                <div className="rounded-lg overflow-hidden border bg-gray-100">
-                  <img src={photoUrl} alt="Business card" className="w-full object-contain max-h-44" />
+                <div className="rounded-lg overflow-hidden border bg-gray-100 mx-auto" style={{ maxWidth: 300 }}>
+                  <img src={photoUrl} alt="Business card" className="w-full object-contain" />
                 </div>
               )}
 
               {error && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</div>
               )}
-
               {!error && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-                  Details extracted. Review and edit if needed, then click "Use these details".
+                  Details extracted. Review and edit if needed.
                 </div>
               )}
 
-              {/* Editable fields */}
               <div className="space-y-2">
                 {FIELDS.map((f) => (
                   <div key={f.key} className="flex items-center gap-2">
@@ -220,29 +203,15 @@ export default function BusinessCardScanner({ onResult, onClose }) {
                       placeholder={f.label}
                       className="flex-1 px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand"
                     />
-                    {fields[f.key] && (
-                      <button
-                        onClick={() => setFields((prev) => ({ ...prev, [f.key]: '' }))}
-                        className="text-gray-300 hover:text-gray-500 text-lg leading-none px-1"
-                        title="Clear"
-                      >&times;</button>
-                    )}
                   </div>
                 ))}
               </div>
 
-              {/* Actions */}
               <div className="flex gap-3 pt-1">
-                <button
-                  onClick={handleConfirm}
-                  className="flex-1 px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover"
-                >
+                <button onClick={handleConfirm} className="flex-1 px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-hover">
                   Use these details
                 </button>
-                <button
-                  onClick={handleReset}
-                  className="px-4 py-2 bg-white border text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
-                >
+                <button onClick={handleReset} className="px-4 py-2 bg-white border text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
                   Retry
                 </button>
               </div>

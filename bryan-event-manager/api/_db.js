@@ -28,6 +28,14 @@ export async function query(text, params) {
   }
 }
 
+// Initial superadmin emails (seeded on first run)
+const SEED_SUPERADMINS = [
+  'cdp@vidfirekill.com',
+  'davide.berardino@bryan.it',
+  'max@bryan.it',
+  'ggi@vidfirekill.com',
+];
+
 export async function ensureSchema() {
   await query(`
     CREATE TABLE IF NOT EXISTS participants (
@@ -37,6 +45,7 @@ export async function ensureSchema() {
       email TEXT NOT NULL UNIQUE,
       company TEXT NOT NULL DEFAULT '',
       role TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
       rsvp TEXT NOT NULL DEFAULT 'Invited',
       checked_in BOOLEAN NOT NULL DEFAULT FALSE,
       checked_in_at TIMESTAMPTZ,
@@ -44,16 +53,40 @@ export async function ensureSchema() {
     );
   `);
   await query(`CREATE INDEX IF NOT EXISTS idx_participants_email ON participants (LOWER(email));`);
-  // Add columns if they don't exist (for existing databases)
   await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS company TEXT NOT NULL DEFAULT '';`);
   await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT '';`);
   await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS rsvp TEXT NOT NULL DEFAULT 'Invited';`);
+  await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT '';`);
+}
+
+export async function ensureAuthSchema() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      role TEXT NOT NULL DEFAULT 'admin',
+      session_token TEXT,
+      created_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      active BOOLEAN DEFAULT TRUE
+    );
+  `);
+  // Seed superadmins if users table is empty
+  const { rowCount } = await query('SELECT 1 FROM users LIMIT 1');
+  if (rowCount === 0) {
+    for (const email of SEED_SUPERADMINS) {
+      await query(
+        'INSERT INTO users (email, role, created_by) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING',
+        [email, 'superadmin', 'system']
+      );
+    }
+  }
 }
 
 export function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
 export function normalizeEmail(email) {

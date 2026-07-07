@@ -18,9 +18,9 @@ function extractEmail(text) {
   return null;
 }
 
-const EMPTY_FORM = { first_name: '', last_name: '', email: '', company: '', role: '', rsvp: 'Invited' };
+const EMPTY_FORM = { first_name: '', last_name: '', email: '', company: '', role: '', phone: '', rsvp: 'Invited' };
 
-export default function ScannerPanel({ onCheckin }) {
+export default function ScannerPanel({ onCheckin, authFetch }) {
   const scannerRef = useRef(null);
   const html5Ref = useRef(null);
   const lastScanRef = useRef({ text: null, time: 0 });
@@ -103,12 +103,12 @@ export default function ScannerPanel({ onCheckin }) {
     setError(null);
     setSaving(true);
 
-    // Pass extra fields so the API can create the participant if not found
     const extra = {
       first_name: form.first_name.trim(),
       last_name: form.last_name.trim(),
       company: form.company.trim(),
       role: form.role.trim(),
+      phone: form.phone.trim(),
       rsvp: form.rsvp,
     };
 
@@ -214,6 +214,16 @@ export default function ScannerPanel({ onCheckin }) {
                 />
               </div>
               <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="+39 333 1234567"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Company</label>
                 <input
                   type="text"
@@ -233,7 +243,7 @@ export default function ScannerPanel({ onCheckin }) {
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
                 />
               </div>
-              <div className="sm:col-span-2">
+              <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">RSVP</label>
                 <select
                   value={form.rsvp}
@@ -305,10 +315,12 @@ export default function ScannerPanel({ onCheckin }) {
               email: data.email || f.email,
               company: data.company || f.company,
               role: data.role || f.role,
+              phone: data.phone || f.phone,
             }));
             setShowCardScanner(false);
           }}
           onClose={() => setShowCardScanner(false)}
+          authFetch={authFetch}
         />
       )}
     </div>
