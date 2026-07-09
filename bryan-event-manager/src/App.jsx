@@ -23,6 +23,8 @@ export default function App() {
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('user')); } catch { return null; }
   });
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState(null);
 
   /* ─── App state ─── */
   const [page, setPage] = useState('dashboard');
@@ -68,8 +70,37 @@ export default function App() {
     setParticipants([]);
   }, [authFetch]);
 
-  /* ─── Validate session on mount ─── */
+  /* ─── Handle magic link token from URL + validate existing session ─── */
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const magicToken = params.get('magic');
+
+    if (magicToken) {
+      // Remove token from URL without reload
+      window.history.replaceState({}, '', window.location.pathname);
+      setVerifying(true);
+      (async () => {
+        try {
+          const res = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: magicToken }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            handleLogin(data.sessionToken, data.user);
+          } else {
+            setVerifyError(data.error || 'Invalid or expired link');
+          }
+        } catch (_) {
+          setVerifyError('Network error');
+        } finally {
+          setVerifying(false);
+        }
+      })();
+      return;
+    }
+
     if (!sessionToken) { setLoading(false); return; }
     (async () => {
       try {
@@ -81,7 +112,6 @@ export default function App() {
           setUser(data.user);
           localStorage.setItem('user', JSON.stringify(data.user));
         } else {
-          // Token invalid
           setSessionToken(null);
           setUser(null);
           localStorage.removeItem('sessionToken');
@@ -233,7 +263,7 @@ export default function App() {
 
   /* ─── Not logged in → show login ─── */
   if (!sessionToken || !user) {
-    return <LoginPage onLogin={handleLogin} />;
+    return <LoginPage onLogin={handleLogin} verifying={verifying} verifyError={verifyError} />;
   }
 
   /* ─── Logged in → full app ─── */

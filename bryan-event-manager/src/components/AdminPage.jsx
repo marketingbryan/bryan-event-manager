@@ -83,15 +83,15 @@ export default function AdminPage({ authFetch }) {
   };
 
   const superadmins = users.filter((u) => u.role === 'superadmin');
-  const admins = users.filter((u) => u.role === 'admin' && u.active);
-  const inactive = users.filter((u) => u.role === 'admin' && !u.active);
+  const hostesses = users.filter((u) => u.role === 'hostess' && u.active);
+  const inactive = users.filter((u) => u.role === 'hostess' && !u.active);
 
   return (
     <div className="space-y-6">
       {/* Add admin form */}
       <div className="bg-white rounded-xl border p-4 sm:p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Add Admin</h2>
-        <p className="text-sm text-gray-500 mb-4">Grant access to a new user (e.g., event hostess).</p>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">Add Hostess</h2>
+        <p className="text-sm text-gray-500 mb-4">Grant access to a new hostess for event check-ins.</p>
         <form onSubmit={handleAdd} className="flex gap-3">
           <input
             type="email"
@@ -141,8 +141,8 @@ export default function AdminPage({ authFetch }) {
               </div>
             ))}
 
-            {/* Active admins */}
-            {admins.map((u) => (
+            {/* Active hostesses */}
+            {hostesses.map((u) => (
               <div key={u.id} className="px-4 py-3 flex items-center justify-between">
                 <div>
                   <div className="text-sm font-medium text-gray-900">{u.email}</div>
@@ -151,8 +151,8 @@ export default function AdminPage({ authFetch }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    Admin
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-pink-100 text-pink-800">
+                    Hostess
                   </span>
                   <button
                     onClick={() => handleRemove(u.email)}
@@ -164,9 +164,9 @@ export default function AdminPage({ authFetch }) {
               </div>
             ))}
 
-            {admins.length === 0 && (
+            {hostesses.length === 0 && (
               <div className="px-4 py-6 text-center text-sm text-gray-400">
-                No admins yet. Add an email above to grant access.
+                No hostesses yet. Add an email above to grant access.
               </div>
             )}
 

@@ -26,12 +26,12 @@ export default async function handler(req, res) {
       // Reactivate
       await query(
         'UPDATE users SET active = TRUE, role = $1, created_by = $2 WHERE email = $3',
-        ['admin', superadmin.email, email]
+        ['hostess', superadmin.email, email]
       );
     } else {
       await query(
         'INSERT INTO users (email, role, created_by) VALUES ($1, $2, $3)',
-        [email, 'admin', superadmin.email]
+        [email, 'hostess', superadmin.email]
       );
     }
 

@@ -64,13 +64,20 @@ export async function ensureAuthSchema() {
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
-      role TEXT NOT NULL DEFAULT 'admin',
+      role TEXT NOT NULL DEFAULT 'hostess',
       session_token TEXT,
+      magic_token TEXT,
+      magic_token_expires TIMESTAMPTZ,
       created_by TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       active BOOLEAN DEFAULT TRUE
     );
   `);
+  // Migration: add magic_token columns if missing
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS magic_token TEXT;`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS magic_token_expires TIMESTAMPTZ;`);
+  // Migration: rename role 'admin' → 'hostess' for existing rows
+  await query(`UPDATE users SET role = 'hostess' WHERE role = 'admin';`);
   // Seed superadmins if users table is empty
   const { rowCount } = await query('SELECT 1 FROM users LIMIT 1');
   if (rowCount === 0) {
