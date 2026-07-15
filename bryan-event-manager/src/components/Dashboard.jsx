@@ -92,7 +92,7 @@ function TrendChart({ points, total }) {
 
   return (
     <div className="w-full overflow-x-auto">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-64" preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 260 }} preserveAspectRatio="xMidYMid meet">
         {tickValues.map((v) => (
           <g key={v}>
             <line

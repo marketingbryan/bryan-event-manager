@@ -84,7 +84,6 @@ export default function AdminPage({ authFetch }) {
 
   const superadmins = users.filter((u) => u.role === 'superadmin');
   const hostesses = users.filter((u) => u.role === 'hostess' && u.active);
-  const inactive = users.filter((u) => u.role === 'hostess' && !u.active);
 
   return (
     <div className="space-y-6">
@@ -170,19 +169,6 @@ export default function AdminPage({ authFetch }) {
               </div>
             )}
 
-            {/* Inactive admins (collapsed) */}
-            {inactive.length > 0 && (
-              <details className="px-4 py-3">
-                <summary className="text-xs text-gray-400 cursor-pointer">
-                  {inactive.length} removed user{inactive.length !== 1 ? 's' : ''}
-                </summary>
-                <div className="mt-2 space-y-2">
-                  {inactive.map((u) => (
-                    <div key={u.id} className="text-sm text-gray-400 line-through">{u.email}</div>
-                  ))}
-                </div>
-              </details>
-            )}
           </div>
         )}
       </div>
