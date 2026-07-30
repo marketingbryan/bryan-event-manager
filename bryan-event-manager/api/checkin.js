@@ -1,9 +1,9 @@
 // /api/checkin
-// POST body: { email, action: 'check-in' | 'check-out', first_name?, last_name?, company?, role?, phone?, rsvp? }
+// POST body: { email, action: 'check-in' | 'check-out' | 'undo', first_name?, last_name?, company?, role?, phone?, rsvp? }
 import { query, ensureSchema, setCors, normalizeEmail } from './_db.js';
 import { requireAuth } from './_auth.js';
 
-const FIELDS = 'id, first_name, last_name, email, company, role, phone, rsvp, checked_in, checked_in_at';
+const FIELDS = 'id, first_name, last_name, email, company, role, phone, rsvp, checked_in, checked_in_at, checked_out, checked_out_at';
 
 export default async function handler(req, res) {
   setCors(res);
@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     await ensureSchema();
     const body = req.body || {};
     const email = normalizeEmail(body.email);
-    const action = body.action === 'check-out' ? 'check-out' : 'check-in';
+    const action = ['check-out', 'undo'].includes(body.action) ? body.action : 'check-in';
 
     if (!email) {
       return res.status(400).json({ ok: false, error: 'Email missing' });
@@ -60,17 +60,33 @@ export default async function handler(req, res) {
     const participant = rows[0];
 
     if (action === 'check-in') {
-      if (participant.checked_in) {
+      if (participant.checked_in && !participant.checked_out) {
         return res.status(200).json({ ok: true, alreadyCheckedIn: true, participant });
       }
+      // Check in (also resets any previous check-out)
       const upd = await query(
-        `UPDATE participants SET checked_in = TRUE, checked_in_at = NOW() WHERE id = $1 RETURNING ${FIELDS}`,
+        `UPDATE participants SET checked_in = TRUE, checked_in_at = NOW(), checked_out = FALSE, checked_out_at = NULL
+         WHERE id = $1 RETURNING ${FIELDS}`,
         [participant.id]
       );
       return res.status(200).json({ ok: true, participant: upd.rows[0] });
-    } else {
+    }
+
+    if (action === 'check-out') {
+      // Check-out: mark as left but keep checked_in = true (they attended)
       const upd = await query(
-        `UPDATE participants SET checked_in = FALSE, checked_in_at = NULL WHERE id = $1 RETURNING ${FIELDS}`,
+        `UPDATE participants SET checked_out = TRUE, checked_out_at = NOW()
+         WHERE id = $1 RETURNING ${FIELDS}`,
+        [participant.id]
+      );
+      return res.status(200).json({ ok: true, participant: upd.rows[0] });
+    }
+
+    if (action === 'undo') {
+      // Undo: completely remove as if never checked in
+      const upd = await query(
+        `UPDATE participants SET checked_in = FALSE, checked_in_at = NULL, checked_out = FALSE, checked_out_at = NULL
+         WHERE id = $1 RETURNING ${FIELDS}`,
         [participant.id]
       );
       return res.status(200).json({ ok: true, participant: upd.rows[0] });

@@ -150,10 +150,12 @@ export default function App() {
   /* ─── Stats ─── */
   const stats = useMemo(() => {
     const total = participants.length;
-    const checked = participants.filter((p) => p.checked_in).length;
-    const missing = total - checked;
-    const pct = total === 0 ? 0 : Math.round((checked / total) * 100);
-    return { total, checked, missing, pct };
+    const attended = participants.filter((p) => p.checked_in).length; // checked in (including checked out)
+    const present = participants.filter((p) => p.checked_in && !p.checked_out).length; // currently present
+    const left = participants.filter((p) => p.checked_in && p.checked_out).length; // checked out
+    const missing = total - attended;
+    const pct = total === 0 ? 0 : Math.round((attended / total) * 100);
+    return { total, attended, present, left, missing, pct };
   }, [participants]);
 
   /* ─── Handlers ─── */
@@ -203,13 +205,16 @@ export default function App() {
     if (res.status === 401) return;
     const data = await res.json();
     if (data.ok) {
+      const name = `${data.participant.first_name} ${data.participant.last_name}`;
       if (data.alreadyCheckedIn) {
-        showToast('info', `${data.participant.first_name} ${data.participant.last_name} is already checked in`);
+        showToast('info', `${name} is already checked in`);
+      } else if (action === 'undo') {
+        showToast('info', `Check-in undone for ${name}`);
       } else if (action === 'check-out') {
-        showToast('info', `Check-in undone for ${data.participant.first_name} ${data.participant.last_name}`);
+        showToast('success', `${name} checked out`);
       } else {
         const label = data.created ? 'Added & checked in' : 'Checked in';
-        showToast('success', `${label}: ${data.participant.first_name} ${data.participant.last_name}`);
+        showToast('success', `${label}: ${name}`);
       }
       await refresh();
       return data;
@@ -244,8 +249,9 @@ export default function App() {
       Company: p.company || '',
       Role: p.role || '',
       RSVP: p.rsvp || 'Invited',
-      Status: p.checked_in ? 'Checked in' : 'No-show',
+      Status: p.checked_in ? (p.checked_out ? 'Checked out' : 'Checked in') : 'No-show',
       'Check-in Time': p.checked_in_at ? new Date(p.checked_in_at).toLocaleString('en-GB') : '',
+      'Check-out Time': p.checked_out_at ? new Date(p.checked_out_at).toLocaleString('en-GB') : '',
     }));
     const csv = Papa.unparse(data);
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });

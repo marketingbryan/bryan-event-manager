@@ -57,6 +57,8 @@ export async function ensureSchema() {
   await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT '';`);
   await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS rsvp TEXT NOT NULL DEFAULT 'Invited';`);
   await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT '';`);
+  await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS checked_out BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await query(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMPTZ;`);
 }
 
 export async function ensureAuthSchema() {

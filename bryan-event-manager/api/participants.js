@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const { rows } = await query(
-        `SELECT id, first_name, last_name, email, company, role, phone, rsvp, checked_in, checked_in_at, created_at
+        `SELECT id, first_name, last_name, email, company, role, phone, rsvp, checked_in, checked_in_at, checked_out, checked_out_at, created_at
          FROM participants
          ORDER BY last_name ASC, first_name ASC`
       );

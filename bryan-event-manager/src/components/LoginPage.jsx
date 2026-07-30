@@ -35,16 +35,28 @@ export default function LoginPage({ onLogin, verifying, verifyError }) {
   };
 
   // Show verifying state when App is processing a magic link token from URL
-  if (verifying) {
+  if (verifying || verifyError) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="w-full max-w-sm text-center">
-          <div className="w-10 h-10 mx-auto mb-4 border-4 border-gray-200 border-t-brand rounded-full animate-spin" />
-          <p className="text-sm text-gray-600">Logging you in...</p>
+          {verifying && (
+            <>
+              <div className="w-10 h-10 mx-auto mb-4 border-4 border-gray-200 border-t-brand rounded-full animate-spin" />
+              <p className="text-sm text-gray-600">Logging you in...</p>
+            </>
+          )}
           {verifyError && (
-            <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
-              {verifyError}
-            </div>
+            <>
+              <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                {verifyError}
+              </div>
+              <button
+                onClick={() => window.location.replace('/')}
+                className="mt-4 text-sm text-brand hover:underline"
+              >
+                Back to login
+              </button>
+            </>
           )}
         </div>
       </div>

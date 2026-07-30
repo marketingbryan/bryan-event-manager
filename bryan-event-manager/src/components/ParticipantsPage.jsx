@@ -18,7 +18,9 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return participants.filter((p) => {
-      if (statusFilter === 'checked' && !p.checked_in) return false;
+      if (statusFilter === 'present' && !(p.checked_in && !p.checked_out)) return false;
+      if (statusFilter === 'left' && !(p.checked_in && p.checked_out)) return false;
+      if (statusFilter === 'attended' && !p.checked_in) return false;
       if (statusFilter === 'noshow' && p.checked_in) return false;
       if (!q) return true;
       return (
@@ -202,7 +204,9 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
           <input type="text" placeholder="Search name, email, company, role, phone..." value={filter} onChange={(e) => setFilter(e.target.value)} className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand" />
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-2 border rounded-lg bg-white">
             <option value="all">All ({participants.length})</option>
-            <option value="checked">Checked in ({participants.filter((p) => p.checked_in).length})</option>
+            <option value="present">Present ({participants.filter((p) => p.checked_in && !p.checked_out).length})</option>
+            <option value="attended">Attended ({participants.filter((p) => p.checked_in).length})</option>
+            <option value="left">Left ({participants.filter((p) => p.checked_in && p.checked_out).length})</option>
             <option value="noshow">No-show ({participants.filter((p) => !p.checked_in).length})</option>
           </select>
         </div>
@@ -250,18 +254,30 @@ export default function ParticipantsPage({ participants, loading, onCheckin, onU
                       </button>
                     </td>
                     <td className="px-4 py-3">
-                      {p.checked_in ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Checked in</span>
+                      {p.checked_in && !p.checked_out ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Present</span>
+                      ) : p.checked_in && p.checked_out ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Left</span>
                       ) : (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">No-show</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {p.checked_in ? (
-                        <button disabled={busy === p.email} onClick={() => handleAction(p.email, 'check-out')} className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50">Undo</button>
-                      ) : (
-                        <button disabled={busy === p.email} onClick={() => handleAction(p.email, 'check-in')} className="text-sm px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-hover disabled:opacity-50">Check in</button>
-                      )}
+                      <div className="flex items-center justify-end gap-1.5">
+                        {p.checked_in && !p.checked_out ? (
+                          <>
+                            <button disabled={busy === p.email} onClick={() => handleAction(p.email, 'check-out')} className="text-sm px-3 py-1.5 border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 disabled:opacity-50">Check-out</button>
+                            <button disabled={busy === p.email} onClick={() => handleAction(p.email, 'undo')} className="text-sm px-2 py-1.5 border border-gray-300 text-gray-500 rounded-lg hover:bg-gray-100 disabled:opacity-50" title="Undo check-in completely">Undo</button>
+                          </>
+                        ) : p.checked_in && p.checked_out ? (
+                          <>
+                            <button disabled={busy === p.email} onClick={() => handleAction(p.email, 'check-in')} className="text-sm px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-hover disabled:opacity-50">Re-enter</button>
+                            <button disabled={busy === p.email} onClick={() => handleAction(p.email, 'undo')} className="text-sm px-2 py-1.5 border border-gray-300 text-gray-500 rounded-lg hover:bg-gray-100 disabled:opacity-50" title="Undo completely">Undo</button>
+                          </>
+                        ) : (
+                          <button disabled={busy === p.email} onClick={() => handleAction(p.email, 'check-in')} className="text-sm px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-hover disabled:opacity-50">Check in</button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))

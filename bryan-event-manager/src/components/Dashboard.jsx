@@ -5,11 +5,12 @@ export default function Dashboard({ stats, participants, loading }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Participants" value={stats.total} />
-        <StatCard label="Checked In" value={stats.checked} valueClass="text-ok" />
-        <StatCard label="Missing" value={stats.missing} valueClass="text-danger" />
-        <StatCard label="% Attendance" value={`${stats.pct}%`} valueClass="text-brand" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <StatCard label="Total" value={stats.total} />
+        <StatCard label="Present Now" value={stats.present} valueClass="text-ok" />
+        <StatCard label="Attended" value={stats.attended} valueClass="text-brand" />
+        <StatCard label="Left" value={stats.left} valueClass="text-amber-600" />
+        <StatCard label="No-show" value={stats.missing} valueClass="text-danger" />
       </div>
 
       <div className="bg-white rounded-xl border p-4 sm:p-6">

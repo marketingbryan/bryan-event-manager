@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     );
 
     // Build magic link URL
-    const appUrl = (process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
+    const appUrl = (process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5173')).replace(/\/$/, '');
     const magicLink = `${appUrl}/?magic=${magicToken}`;
 
     // Send email via Resend
