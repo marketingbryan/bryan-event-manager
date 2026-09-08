@@ -340,7 +340,7 @@ export default function App() {
             <ExportPage stats={stats} onExport={handleExport} disabled={participants.length === 0} />
           )}
           {page === 'admin' && user.role === 'superadmin' && (
-            <AdminPage authFetch={authFetch} />
+            <AdminPage authFetch={authFetch} currentUser={user} />
           )}
         </main>
       </div>

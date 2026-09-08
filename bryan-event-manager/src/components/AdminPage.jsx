@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-export default function AdminPage({ authFetch }) {
+export default function AdminPage({ authFetch, currentUser }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newEmail, setNewEmail] = useState('');
@@ -82,6 +82,29 @@ export default function AdminPage({ authFetch }) {
     }
   };
 
+  const handlePromote = async (email) => {
+    if (!confirm(`Promote ${email} to superadmin?`)) return;
+    setError(null);
+    try {
+      const res = await authFetch('/api/admin/promote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSuccess(`${email} promoted to superadmin`);
+        await loadUsers();
+      } else {
+        setError(data.error || 'Failed to promote user');
+      }
+    } catch (e) {
+      setError('Network error');
+    } finally {
+      setTimeout(() => setSuccess(null), 3000);
+    }
+  };
+
   const superadmins = users.filter((u) => u.role === 'superadmin');
   const hostesses = users.filter((u) => u.role === 'hostess' && u.active);
 
@@ -134,9 +157,19 @@ export default function AdminPage({ authFetch }) {
                   <div className="text-sm font-medium text-gray-900">{u.email}</div>
                   <div className="text-xs text-gray-400">Added by {u.created_by || 'system'}</div>
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                  Superadmin
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    Superadmin
+                  </span>
+                  {currentUser?.email !== u.email && (
+                    <button
+                      onClick={() => handleRemove(u.email)}
+                      className="text-sm px-3 py-1.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
 
@@ -153,6 +186,12 @@ export default function AdminPage({ authFetch }) {
                   <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-pink-100 text-pink-800">
                     Hostess
                   </span>
+                  <button
+                    onClick={() => handlePromote(u.email)}
+                    className="text-sm px-3 py-1.5 border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50"
+                  >
+                    Promote
+                  </button>
                   <button
                     onClick={() => handleRemove(u.email)}
                     className="text-sm px-3 py-1.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"

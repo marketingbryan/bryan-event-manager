@@ -33,10 +33,12 @@ export default async function handler(req, res) {
       return res.status(401).json({ ok: false, error: 'Link expired — please request a new one' });
     }
 
-    // Generate session token and clear magic token (single-use)
+    // Generate session token — keep magic token alive until natural expiry.
+    // Email link scanners (Gmail, Outlook) pre-fetch URLs and would consume
+    // a single-use token before the real user clicks.
     const sessionToken = crypto.randomBytes(32).toString('hex');
     await query(
-      'UPDATE users SET session_token = $1, magic_token = NULL, magic_token_expires = NULL WHERE id = $2',
+      'UPDATE users SET session_token = $1 WHERE id = $2',
       [sessionToken, user.id]
     );
 

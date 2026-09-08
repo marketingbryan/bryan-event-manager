@@ -1,4 +1,4 @@
-// POST { email } → deactivate an admin (superadmin only, can't remove superadmins)
+// POST { email } → promote a hostess to superadmin (superadmin only)
 import { query, ensureAuthSchema, normalizeEmail, setCors } from '../_db.js';
 import { requireSuperAdmin } from '../_auth.js';
 
@@ -17,31 +17,21 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: 'Email required' });
     }
 
-    const target = await query('SELECT id, role FROM users WHERE email = $1', [email]);
+    const target = await query('SELECT id, role, active FROM users WHERE email = $1', [email]);
     if (target.rows.length === 0) {
       return res.status(404).json({ ok: false, error: 'User not found' });
     }
-
-    // Can't remove yourself
-    if (email === superadmin.email) {
-      return res.status(403).json({ ok: false, error: 'Cannot remove yourself' });
+    if (!target.rows[0].active) {
+      return res.status(400).json({ ok: false, error: 'User is inactive' });
     }
-
-    // If removing a superadmin, ensure at least 1 remains
     if (target.rows[0].role === 'superadmin') {
-      const { rows: remaining } = await query(
-        "SELECT COUNT(*) as cnt FROM users WHERE role = 'superadmin' AND active = TRUE AND email != $1",
-        [email]
-      );
-      if (parseInt(remaining[0].cnt) < 1) {
-        return res.status(403).json({ ok: false, error: 'At least one superadmin must remain' });
-      }
+      return res.status(409).json({ ok: false, error: 'Already a superadmin' });
     }
 
-    await query('UPDATE users SET active = FALSE, session_token = NULL WHERE email = $1', [email]);
+    await query('UPDATE users SET role = $1 WHERE email = $2', ['superadmin', email]);
     return res.status(200).json({ ok: true });
   } catch (err) {
-    console.error('admin remove error:', err);
+    console.error('admin promote error:', err);
     return res.status(500).json({ ok: false, error: err.message });
   }
 }
