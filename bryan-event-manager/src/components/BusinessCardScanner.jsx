@@ -5,6 +5,7 @@ const FIELDS = [
   { key: 'last_name', label: 'Last Name', color: 'bg-amber-100 text-amber-700 border-amber-300' },
   { key: 'email', label: 'Email', color: 'bg-sky-100 text-sky-700 border-sky-300' },
   { key: 'phone', label: 'Phone', color: 'bg-teal-100 text-teal-700 border-teal-300' },
+  { key: 'phone2', label: 'Phone 2', color: 'bg-cyan-100 text-cyan-700 border-cyan-300' },
   { key: 'company', label: 'Company', color: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
   { key: 'role', label: 'Role', color: 'bg-violet-100 text-violet-700 border-violet-300' },
 ];
@@ -28,7 +29,7 @@ export default function BusinessCardScanner({ onResult, onClose, authFetch }) {
   const streamRef = useRef(null);
   const [phase, setPhase] = useState('idle');
   const [photoUrl, setPhotoUrl] = useState(null);
-  const [fields, setFields] = useState({ first_name: '', last_name: '', email: '', phone: '', company: '', role: '' });
+  const [fields, setFields] = useState({ first_name: '', last_name: '', email: '', phone: '', phone2: '', company: '', role: '' });
   const [error, setError] = useState(null);
 
   const startCamera = useCallback(async () => {
@@ -117,7 +118,7 @@ export default function BusinessCardScanner({ onResult, onClose, authFetch }) {
   const handleReset = () => {
     setPhase('idle');
     setPhotoUrl(null);
-    setFields({ first_name: '', last_name: '', email: '', phone: '', company: '', role: '' });
+    setFields({ first_name: '', last_name: '', email: '', phone: '', phone2: '', company: '', role: '' });
     setError(null);
   };
 

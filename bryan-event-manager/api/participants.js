@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const { rows } = await query(
-        `SELECT id, first_name, last_name, email, company, role, phone, rsvp, checked_in, checked_in_at, checked_out, checked_out_at, created_at
+        `SELECT id, first_name, last_name, email, company, role, phone, phone2, rsvp, checked_in, checked_in_at, checked_out, checked_out_at, created_at
          FROM participants
          ORDER BY last_name ASC, first_name ASC`
       );
@@ -42,6 +42,7 @@ export default async function handler(req, res) {
         const company = String(p.company || '').trim();
         const role = String(p.role || '').trim();
         const phone = String(p.phone || '').trim();
+        const phone2 = String(p.phone2 || '').trim();
         const rsvpRaw = String(p.rsvp || '').trim();
         const rsvp = rsvpRaw === 'Registered' ? 'Registered' : 'Invited';
 
@@ -55,11 +56,11 @@ export default async function handler(req, res) {
         }
 
         const result = await query(
-          `INSERT INTO participants (first_name, last_name, email, company, role, phone, rsvp)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `INSERT INTO participants (first_name, last_name, email, company, role, phone, phone2, rsvp)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            ON CONFLICT (email) DO NOTHING
            RETURNING id`,
-          [first, last, email, company, role, phone, rsvp]
+          [first, last, email, company, role, phone, phone2, rsvp]
         );
         if (result.rowCount > 0) inserted++;
         else skipped++;

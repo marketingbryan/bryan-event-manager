@@ -246,6 +246,7 @@ export default function App() {
       'Last Name': p.last_name,
       Email: p.email,
       Phone: p.phone || '',
+      'Phone 2': p.phone2 || '',
       Company: p.company || '',
       Role: p.role || '',
       RSVP: p.rsvp || 'Invited',

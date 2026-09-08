@@ -18,7 +18,7 @@ function extractEmail(text) {
   return null;
 }
 
-const EMPTY_FORM = { first_name: '', last_name: '', email: '', company: '', role: '', phone: '', rsvp: 'Invited' };
+const EMPTY_FORM = { first_name: '', last_name: '', email: '', company: '', role: '', phone: '', phone2: '', rsvp: 'Invited' };
 
 export default function ScannerPanel({ onCheckin, authFetch }) {
   const scannerRef = useRef(null);
@@ -109,6 +109,7 @@ export default function ScannerPanel({ onCheckin, authFetch }) {
       company: form.company.trim(),
       role: form.role.trim(),
       phone: form.phone.trim(),
+      phone2: form.phone2.trim(),
       rsvp: form.rsvp,
     };
 
@@ -224,6 +225,16 @@ export default function ScannerPanel({ onCheckin, authFetch }) {
                 />
               </div>
               <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Phone 2</label>
+                <input
+                  type="tel"
+                  value={form.phone2}
+                  onChange={(e) => setForm((f) => ({ ...f, phone2: e.target.value }))}
+                  placeholder="+39 02 1234567"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-brand text-sm"
+                />
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Company</label>
                 <input
                   type="text"
@@ -316,6 +327,7 @@ export default function ScannerPanel({ onCheckin, authFetch }) {
               company: data.company || f.company,
               role: data.role || f.role,
               phone: data.phone || f.phone,
+              phone2: data.phone2 || f.phone2,
             }));
             setShowCardScanner(false);
           }}

@@ -3,7 +3,7 @@
 import { query, ensureSchema, setCors, normalizeEmail } from './_db.js';
 import { requireAuth } from './_auth.js';
 
-const FIELDS = 'id, first_name, last_name, email, company, role, phone, rsvp, checked_in, checked_in_at, checked_out, checked_out_at';
+const FIELDS = 'id, first_name, last_name, email, company, role, phone, phone2, rsvp, checked_in, checked_in_at, checked_out, checked_out_at';
 
 export default async function handler(req, res) {
   setCors(res);
@@ -36,14 +36,15 @@ export default async function handler(req, res) {
         const company = String(body.company || '').trim();
         const role = String(body.role || '').trim();
         const phone = String(body.phone || '').trim();
+        const phone2 = String(body.phone2 || '').trim();
         const rsvpRaw = String(body.rsvp || '').trim();
         const rsvp = rsvpRaw === 'Registered' ? 'Registered' : 'Invited';
         const ins = await query(
-          `INSERT INTO participants (first_name, last_name, email, company, role, phone, rsvp, checked_in, checked_in_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW())
+          `INSERT INTO participants (first_name, last_name, email, company, role, phone, phone2, rsvp, checked_in, checked_in_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, NOW())
            ON CONFLICT (email) DO NOTHING
            RETURNING ${FIELDS}`,
-          [first, last, email, company, role, phone, rsvp]
+          [first, last, email, company, role, phone, phone2, rsvp]
         );
         if (ins.rows.length > 0) {
           return res.status(200).json({ ok: true, participant: ins.rows[0], created: true });

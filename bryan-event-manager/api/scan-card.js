@@ -40,14 +40,16 @@ Return ONLY a JSON object with these fields (use empty string if not found):
   "email": "",
   "company": "",
   "role": "",
-  "phone": ""
+  "phone": "",
+  "phone2": ""
 }
 Rules:
 - Split the full name into first_name and last_name
 - email must be a valid email address
 - company is the organization/business name
 - role is the job title or position
-- phone is any phone/mobile/cell number found, include country prefix if visible
+- phone is the primary phone/mobile/cell number found, include country prefix if visible
+- phone2 is a second phone number if present (e.g. office vs mobile), empty string if only one number
 - Return ONLY the JSON, no markdown, no explanation, no code fences`
           },
           {
@@ -86,6 +88,7 @@ Rules:
       company: String(fields.company || '').trim(),
       role: String(fields.role || '').trim(),
       phone: String(fields.phone || '').trim(),
+      phone2: String(fields.phone2 || '').trim(),
     };
 
     return res.status(200).json({ ok: true, fields: result });
